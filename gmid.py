@@ -39,6 +39,7 @@ class GMID:
         self.vsb, self.vds, self.vgs = self.voltage_sources.values()
         self.w = self.lookup_table["w"]
         self.l = self.lookup_table["l"]
+        self.lengths = self.l # just an alias
 
         # define commonly-used expressions to avoid typing them every time
         self.__common_expressions()
@@ -253,7 +254,7 @@ class GMID:
         ax.set_ylabel(y_label)
 
         if save_fig:
-            fig.savefig(f"{self.mos}_{save_fig}.pdf")
+            fig.savefig(f"{self.mos}_{save_fig}.svg")
 
     ### }}}
 
@@ -597,6 +598,8 @@ class GMID:
         self,
         x_limit: tuple = (),
         y_limit: tuple = (),
+        x_scale: str = "",
+        y_scale: str = "",
         lengths: tuple = (),
         save_fig: str = "",
         return_result: bool = False,
@@ -605,6 +608,8 @@ class GMID:
             x_axis=self.gmid_expression,
             y_axis=self.current_density_expression,
             lengths=lengths,
+            x_scale=x_scale,
+            y_scale=y_scale,
             x_limit=x_limit,
             y_limit=y_limit,
             save_fig=save_fig,
