@@ -8,8 +8,8 @@ This tool has the following goals:
    Since all relevant MOS parameters are available, all sorts of plots can be
    made; for example, those used in the gm/ID design methodology.
 
-2. Provide a tool that doesn't depend on any proprietary software or require
-   require listening fees.
+2. Provide a tool that doesn't depend on any proprietary software or
+   require licensing fees.
 
 3. Open source so that it can be easily modified by the user to suit his/her
    needs.
