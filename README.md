@@ -11,8 +11,8 @@ This tool has the following goals:
 2. Provide a tool that doesn't depend on any proprietary software or
    require licensing fees.
 
-3. Open source so that it can be easily modified by the user to suit his/her
-   needs.
+3. Open source so that it can be easily modified/extended by the user to suit
+   his/her needs.
 
 ## Installation
 
@@ -27,8 +27,7 @@ Note that installing `PySpice` installs `Numpy`, `Scipy`, and `Matplotlib`. So, 
 only necessary to install `PySpice`.
 
 `PySpice` can be installed the conventional way with `pip`. However, if you
-prefer to have an isolated environment with `conda`, the required steps are
-listed below.
+already use `conda` environments, the required steps are listed below.
 
 - `conda create -n pytorch`
 - `conda activate pytorch`
@@ -42,17 +41,18 @@ listed below.
 Before any plots can be made, a lookup table of all the relevant parameters
 must first be created. This is done by instantiating an object from the
 `LookupTableGenerator` and then building the table with the `build` method. An
-example is given below. It took less than a minute on my i7-6700HQ CPU.
+example is given below. Generating the table took less than a minute on my
+i7-6700HQ CPU.
 
 ```python
 obj = LookupTableGenerator (
-    vgs=(0, 1, 0.01),
-    vds=(0, 1, 0.05),
-    vsb=(0, 1, 0.1),
-    width=10e-6,
-    lengths=[50e-9, 100e-9, 200e-9, 400e-9, 800e-9, 1.6e-6, 3.2e-6, 6.4e-6],
-    models_path="./models",
-    model_names={
+    vgs = (0, 1, 0.01),
+    vds = (0, 1, 0.05),
+    vsb = (0, 1, 0.1),
+    width = 10e-6,
+    lengths = [50e-9, 100e-9, 200e-9, 400e-9, 800e-9, 1.6e-6, 3.2e-6, 6.4e-6],
+    models_path = "./models",
+    model_names = {
         "nmos": "NMOS_VTH",
         "pmos": "PMOS_VTH"},
     description="freepdk 45nm"
@@ -62,7 +62,7 @@ obj.build("./freepdk45_lookup_table.npy")
 
 - `vgs`, `vds`, and `vsb` are tuples of the form `(start, stop, step)` and
   define the range of voltages across the gate, drain, and source terminals of
-  the MOSFET respectively.
+  the MOSFET, respectively.
 - The `length` can be provided as a list of discrete values. A 1-dimensional
   `numpy` array is also accepted.
 - Only a single `width` should be provided. The assumption here is that the
@@ -79,10 +79,10 @@ obj.build("./freepdk45_lookup_table.npy")
 Because of the interactive nature of designing analog circuits, using this
 script within a `jupyter` notebook is highly recommended.
 
-We begin by making the following imports.
+We begin by making the following imports:
 
 ```python
-from gmid import GMID, load_lookup_table
+from gmid import load_lookup_table, GMID
 ```
 
 The `load_lookup_table` function loads a lookup table such as the one generated
@@ -93,19 +93,19 @@ lookup_table = load_lookup_table("./freepdk45_lookup_table.npy")
 ```
 
 The `GMID` class contains methods that can be used to generate plots
-seamlessly. We start by creating an object called `nmos` that selects the
-`nmos` from the lookup table and specifies the source-bulk and drain-source
-voltages to some fixed values. Since the data is 4-dimensional, it is necessary
-to fix two of the variables at the time to allow 2-dimensional plotting.
+seamlessly. We start by creating an object called `nmos` that selects the nmos
+from the lookup table and sets the source-bulk and drain-source voltages to
+some fixed values. Since the data is 4-dimensional, it is necessary to fix two
+of the variables at a time to enable 2-dimensional plotting.
 
 ```python
 nmos = GMID(lookup_table, mos="nmos", vsb=0.0, vds=0.5)
 ```
 
-Since it is very common to plot the current-density ($I_{D}/W$), the intrinsic
-gain ($g_m / g_{ds}$), the transit frequency ($f_{T}$), and the Early-Voltage
-($V_{A}$), with respect to the $g_{m}/I_{D}$ control variable, methods are available
-for all these plots.
+Since it is very common to plot the current-density $I_{D}/W$, the intrinsic
+gain $g_m / g_{ds}$, the transit frequency $f_{T}$, and the Early voltage
+$V_{A}$, with respect to the $g_{m}/I_{D}$ control variable, methods are
+available for all these plots.
 
 ```python
 nmos.current_density_plot()
@@ -124,7 +124,7 @@ array([5.0e-08, 1.0e-07, 2.0e-07, 4.0e-07, 8.0e-07, 1.6e-06, 3.2e-06,
 ```
 
 
-Passing a filtered list to the `current_density_plot` method.
+Pass a filtered list to the `current_density_plot` method.
 
 ```python
 nmos.current_density_plot(
@@ -136,8 +136,8 @@ nmos.current_density_plot(
 
 
 Note that the tool does its best to determine how to scale the axes. For
-example, in the last plot, it decided to use a `log` scale on the y-axis. We
-can easily overwrite that.
+example, in the last plot, a `log` scale was chosen for the y-axis. We can
+easily overwrite that, as well as other things.
 
 ```python
 nmos.current_density_plot(
@@ -167,7 +167,7 @@ nmos.plot_by_expression(
 
 ![custom expression](./images/nmos_custom_expression_1.svg)
 
-In the example below, we want $V_{GS}$ to be on the x-axis. Since this is such
+For this example, we want $V_{GS}$ on the x-axis. Since $V_{GS}$ is such
 a commonly-used expression, it is already defined in the code. Other
 commonly-used expressions such as the ones for gmid, gain, and transit
 frequency are also defined.
@@ -179,19 +179,22 @@ is optional. The function field is also optional if we want to just plot the
 parameter.
 
 While having plots is a good way to visualize trends, we might also just be
-interested in the value.
+interested in the raw value.
 
 ![gain expression](./images/nmos_gain_plot.svg)
 
-Looking at the figure above, it's hard to hard to read exactly the value on the
-y-axis for a particular value on the x-axis, especially more so when the scale
-is logarithmic.
+Looking at the figure above, it's hard to read exactly the value on the y-axis
+for a particular value on the x-axis, especially more so when the scale is
+logarithmic.
 
 The snippet below sets the `gmid` to a particular value, sweeps the length over
-a range, and calculates the gain. Note that for `expression`, we could have
-also used the pre-defined `gain_expression` to avoid having to define one
-ourselves. Also note that the `lookup` method uses interpolation for
-calculation.
+a range, and calculates the gain. Even though the table does not include all of
+the lengths in the sweep variable, they their values are interpolated using the
+available data. The accuracy of the result depends on how far the points are
+from those defined in the table.
+
+Note that for the `expression` argument we could have also used the pre-defined
+`gain_expression` to avoid having to define one ourselves.
 
 ```python
 nmos.lookup_by_gmid(
@@ -209,8 +212,11 @@ array([171.89462638, 244.7708084 , 303.40565751, 331.66760623,
        413.74810267])
 ```
 
-In the previous examples, two of the sources were fixed while the other was
-allowed to vary. This is fine for easy plots. We can use the `lookup` method to
+The retuned data can then used, for example, to make a plot of intrinsic gain
+vs. length.
+
+In all of the preceding, only one source was allowed to vary while the other
+two were fixed. This is fine for easy plots. We can use the `lookup` method to
 get much more sophisticated plots as the `lookup` methods uses the entire
 lookup table.
 
