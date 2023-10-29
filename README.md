@@ -4,17 +4,17 @@
 
 This tool has the following goals:
 
-1. Provide an easy and intuitive way of creating plots of MOSFET parameters.
-   Since all relevant MOS parameters are available, all sorts of plots can be
-   made; for example, those used in the gm/ID design methodology.
+1. Provide an easy way of creating plots of MOSFET parameters, such as those
+   used in the gm/ID design methodology.
 
-2. Provide a tool that doesn't depend on any proprietary software or
-   require licensing fees.
+2. Provide a tool that does not depend on any proprietary software or require
+   licensing fees.
 
-3. Open source so that it can be easily modified/extended by the user to suit
-   his/her needs.
+3. Open source so that it can be easily modified/extended by the user.
 
 ## Installation
+
+### Requirements
 
 This tools is written in Python and requires the following packages:
 
@@ -26,23 +26,26 @@ This tools is written in Python and requires the following packages:
 Note that installing `PySpice` installs `Numpy`, `Scipy`, and `Matplotlib`. So, it is
 only necessary to install `PySpice`.
 
+### Conda
+
 `PySpice` can be installed the conventional way with `pip`. However, if you
 already use `conda` environments, the required steps are listed below.
 
-- `conda create -n pytorch`
-- `conda activate pytorch`
-- `conda install -c conda-forge pytorch`
-- `conda install -c conda-forge ngspice ngspice-lib`
-- `conda install ipykernel`
-- `ipython kernel install --user --name=pytorch`
+```sh
+conda create -n pyspice
+conda activate pyspice
+conda install -c conda-forge pyspice
+conda install -c conda-forge ngspice ngspice-lib
+conda install ipykernel
+ipython kernel install --user --name=pyspice
+```
 
 ## Generating a Lookup Table
 
 Before any plots can be made, a lookup table of all the relevant parameters
 must first be created. This is done by instantiating an object from the
 `LookupTableGenerator` and then building the table with the `build` method. An
-example is given below. Generating the table took less than a minute on my
-i7-6700HQ CPU.
+example is given below.
 
 ```python
 obj = LookupTableGenerator (
@@ -74,14 +77,17 @@ obj.build("./freepdk45_lookup_table.npy")
   above. Note that `PySpice` requires the file containing the models to have
   the same name as one of the models used. This is only a slight inconvenience.
 
-### Making Plots and Calculating Parameters from the Lookup Table
+## Using the Tool
 
 Because of the interactive nature of designing analog circuits, using this
 script within a `jupyter` notebook is highly recommended.
 
+### Imports
+
 We begin by making the following imports:
 
 ```python
+import numpy as np
 from gmid import load_lookup_table, GMID
 ```
 
@@ -93,7 +99,11 @@ lookup_table = load_lookup_table("./freepdk45_lookup_table.npy")
 ```
 
 The `GMID` class contains methods that can be used to generate plots
-seamlessly. We start by creating an object called `nmos` that selects the nmos
+seamlessly.
+
+### Making Simple Plots
+
+We start by creating an object called `nmos` that selects the nmos
 from the lookup table and sets the source-bulk and drain-source voltages to
 some fixed values. Since the data is 4-dimensional, it is necessary to fix two
 of the variables at a time to enable 2-dimensional plotting.
@@ -102,10 +112,16 @@ of the variables at a time to enable 2-dimensional plotting.
 nmos = GMID(lookup_table, mos="nmos", vsb=0.0, vds=0.5)
 ```
 
-Since it is very common to plot the current-density $I_{D}/W$, the intrinsic
-gain $g_m / g_{ds}$, the transit frequency $f_{T}$, and the Early voltage
-$V_{A}$, with respect to the $g_{m}/I_{D}$ control variable, methods are
-available for all these plots.
+Methods are available for the most commonly-used plots in the gm/ID
+methodology.
+
+- `current_density_plot()`: this plots $I_{D}/W$ vs $g_{m}/I_{D}$.
+- `gain_plot()`: this plots $g_m / g_{ds}$ vs $g_{m}/I_{D}$.
+- `transit_frequency_plot()`: this plots $f_{T}$ vs $g_{m}/I_{D}$.
+- `early_voltage_plot()`: this plots $V_{A}$, vs $g_{m}/I_{D}$.
+
+
+For example, the plot of $I_{D}/W$ vs $g_{m}/I_{D}$ is shown below.
 
 ```python
 nmos.current_density_plot()
@@ -123,7 +139,6 @@ array([5.0e-08, 1.0e-07, 2.0e-07, 4.0e-07, 8.0e-07, 1.6e-06, 3.2e-06,
        6.4e-06])
 ```
 
-
 Pass a filtered list to the `current_density_plot` method.
 
 ```python
@@ -133,7 +148,6 @@ nmos.current_density_plot(
 ```
 
 ![current density plot](./images/nmos_current_density_filtered.svg)
-
 
 Note that the tool does its best to determine how to scale the axes. For
 example, in the last plot, a `log` scale was chosen for the y-axis. We can
@@ -150,6 +164,7 @@ nmos.current_density_plot(
 
 ![current density plot](./images/nmos_current_density_options.svg)
 
+### Plotting by Expression
 
 Now, suppose we want to plot something completely custom. The example below
 shows how.
@@ -167,16 +182,26 @@ nmos.plot_by_expression(
 
 ![custom expression](./images/nmos_custom_expression_1.svg)
 
-For this example, we want $V_{GS}$ on the x-axis. Since $V_{GS}$ is such
-a commonly-used expression, it is already defined in the code. Other
-commonly-used expressions such as the ones for gmid, gain, and transit
-frequency are also defined.
+For this example, we want $V_{GS}$ on the x-axis. Since $V_{GS}$ is such a
+commonly-used expression, it is already defined in the code. Other
+commonly-used expressions are also defined.
+
+- `gmid_expression`
+- `vgs_expression`
+- `vds_expression`
+- `vsb_expression`
+- `gain_expression`
+- `current_density_expression`
+- `transist_frequency_expression`
+- `early_voltage_expression`
 
 For the y-axis, we want a custom expression that uses the parameters $I_D$ and
 $g_{ds}$. This can be done by defining a dictionary that specifies the
 variables needed and how to calculate the required parameter. The `label` field
 is optional. The function field is also optional if we want to just plot the
 parameter.
+
+### Getting Raw Values
 
 While having plots is a good way to visualize trends, we might also just be
 interested in the raw value.
@@ -189,7 +214,7 @@ logarithmic.
 
 The snippet below sets the `gmid` to a particular value, sweeps the length over
 a range, and calculates the gain. Even though the table does not include all of
-the lengths in the sweep variable, they their values are interpolated using the
+the lengths in the sweep variable, their values are interpolated using the
 available data. The accuracy of the result depends on how far the points are
 from those defined in the table.
 
@@ -215,15 +240,26 @@ array([171.89462638, 244.7708084 , 303.40565751, 331.66760623,
 The retuned data can then used, for example, to make a plot of intrinsic gain
 vs. length.
 
-In all of the preceding, only one source was allowed to vary while the other
-two were fixed. This is fine for easy plots. We can use the `lookup` method to
-get much more sophisticated plots as the `lookup` methods uses the entire
-lookup table.
 
-Consider the example below where we want to see the dependence of $I_{D}/W$ on
-$g_m / I_{D}$ for different values of $V_{DS}$. This is only possible by
-varying two sources at a time.
+We can also return a single value.
 
+```python
+nmos.lookup_by_gmid(
+    length=450e-9,
+    gmid=15,
+    expression=nmos.gain_expression
+)
+```
+
+### Lookup Methods
+
+In the preceding sections, only one source was allowed to vary while the other
+two were fixed. This is fine for simple plots.
+
+Suppose we want to see the dependence of $I_{D}/W$ on $g_m / I_{D}$ for
+different values of $V_{DS}$. This is only possible by varying two sources at a
+time. Plots of this nature require the use of the entire lookup table. This can
+be done using the `lookup` method, as shown in the snippet below.
 
 ```python
 x = nmos.lookup(
@@ -277,7 +313,7 @@ x = nmos.plot_by_sweep(
 
 ![plot by sweep](./images/nmos_plot_by_sweep.svg)
 
-The `plot_by_sweep` method is extremely flexible and be used to create all
+The `plot_by_sweep` method is extremely flexible and can be used to create all
 sorts of plots. For example, the snippet below shows how to plot the
 traditional output characteristic plot of a MOSFET.
 
@@ -299,4 +335,3 @@ nmos.plot_by_sweep(
 ```
 
 ![output characteristic](./images/nmos_output_characteristics.svg)
-
