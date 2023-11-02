@@ -146,7 +146,7 @@ For example, the plot of $I_{D}/W$ vs $g_{m}/I_{D}$ is shown below.
 nmos.current_density_plot()
 ```
 
-![current density plot](./images/nmos_current_density.svg)
+![current density plot](./figures/nmos_current_density.svg)
 
 When the lookup table includes a lot of lengths, the plot can become crowded.
 You can pass a list of lengths to plot with the `length` parameter.
@@ -166,7 +166,7 @@ nmos.current_density_plot(
 )
 ```
 
-![current density plot](./images/nmos_current_density_filtered.svg)
+![current density plot](./figures/nmos_current_density_filtered.svg)
 
 Note that the tool does its best to determine how to scale the axes. For
 example, in the last plot, a `log` scale was chosen for the y-axis. We can
@@ -182,7 +182,7 @@ nmos.current_density_plot(
 )
 ```
 
-![current density plot](./images/nmos_current_density_options.svg)
+![current density plot](./figures/nmos_current_density_options.svg)
 
 ### Plotting by Expression
 
@@ -200,7 +200,7 @@ nmos.plot_by_expression(
 )
 ```
 
-![custom expression](./images/nmos_custom_expression_1.svg)
+![custom expression](./figures/nmos_custom_expression_1.svg)
 
 For this example, we want $V_{\mathrm{GS}}$ on the x-axis. Since $V_{\mathrm{GS}}$ is such a
 commonly-used expression, it is already defined in the code. Other
@@ -231,7 +231,7 @@ nmos.plot_by_expression(
 )
 ```
 
-![custom expression](./images/nmos_custom_expression_2.svg)
+![custom expression](./figures/nmos_custom_expression_2.svg)
 
 ### Getting Plot Data
 
@@ -289,14 +289,14 @@ nmos.quick_plot(
 )
 ```
 
-![qucik plot](./images/nmos_quick_plot.svg)
+![qucik plot](./figures/nmos_quick_plot.svg)
 
 ## Getting Raw Values
 
 While having plots is a good way to visualize trends, we might also just be
 interested in the raw value.
 
-![gain expression](./images/nmos_gain_plot.svg)
+![gain expression](./figures/nmos_gain_plot.svg)
 
 Looking at the figure above, it's hard to read the exact value on the y-axis
 for a particular value on the x-axis, especially more so when the scale is
@@ -379,7 +379,7 @@ nmos.quick_plot(
 )
 ```
 
-![quick plot](./images/nmos_quick_plot2.svg)
+![quick plot](./figures/nmos_quick_plot2.svg)
 
 
 If the above code seems a bit too much, there's a wrapper method just for that
@@ -402,7 +402,7 @@ nmos.plot_by_sweep(
 )
 ```
 
-![plot by sweep](./images/nmos_plot_by_sweep.svg)
+![plot by sweep](./figures/nmos_plot_by_sweep.svg)
 
 The `plot_by_sweep` method is extremely flexible and can be used to create all
 sorts of plots. For example, the snippet below shows how to plot the
@@ -425,7 +425,7 @@ nmos.plot_by_sweep(
 )
 ```
 
-![output characteristic](./images/nmos_output_characteristics.svg)
+![output characteristic](./figures/nmos_output_characteristics.svg)
 
 # Acknowledgment
 
