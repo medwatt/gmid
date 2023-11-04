@@ -31,7 +31,7 @@ class LookupTableGenerator:
         vds=(0, 1, 0.01),
         vsb=(0, 1, 0.1),
         width=10e-6,
-        lengths=[],
+        lengths=[500e-9, 600e-9],
         simulator="ngspice",
         temp=27,
         model_paths=[],
@@ -51,19 +51,6 @@ class LookupTableGenerator:
         self.description = description
         self.raw_spice = raw_spice
         self.lookup_table = {}
-        self.parameter_names = [
-            "id",
-            "vth",
-            "gm",
-            "gmbs",
-            "gds",
-            "cgg",
-            "cgs",
-            "cbg",
-            "cgd",
-            "cdd",
-            "vdsat"
-        ]
 
     ################################################################################
 
@@ -80,9 +67,24 @@ class LookupTableGenerator:
     ################################################################################
     #                                   NGSPICE                                    #
     ################################################################################
-    def __ngspice_simulator_setup(self, mos):
-        save_internal_parameters = "\n".join([f"save @m1[{p}]" for p in self.parameter_names])
+    def __ngspice_parameters(self):
+        self.parameter_table = {
+            # parameter name : [name recognized by simulator, name used in the output file],
+            "id"   : ["save i(vds)"    , "i(i_vds)"],
+            "vth"  : ["save @m1[vth]"  , "v(@m1[vth])"],
+            "vdsat": ["save @m1[vdsat]", "v(@m1[vdsat])"],
+            "gm"   : ["save @m1[gm]"   , "@m1[gm]"],
+            "gmbs" : ["save @m1[gmbs]" , "@m1[gmbs]"],
+            "gds"  : ["save @m1[gds]"  , "@m1[gds]"],
+            "cgg"  : ["save @m1[cgg]"  , "@m1[cgg]"],
+            "cgs"  : ["save @m1[cgs]"  , "@m1[cgs]"],
+            "cbg"  : ["save @m1[cbg]"  , "@m1[cbg]"],
+            "cgd"  : ["save @m1[cgd]"  , "@m1[cgd]"],
+            "cdd"  : ["save @m1[cdd]"  , "@m1[cdd]"],
+        }
+        self.save_internal_parameters = "\n".join([values[0] for values in self.parameter_table.values()])
 
+    def __ngspice_simulator_setup(self):
         vgs_start, vgs_stop, vgs_step = self.vgs
         vds_start, vds_stop, vds_step = self.vds
         analysis_string = f"dc VDS {vds_start} {vds_stop} {vds_step} VGS {vgs_start} {vgs_stop} {vgs_step}"
@@ -91,8 +93,9 @@ class LookupTableGenerator:
             f".options TEMP = {self.temp}",
             f".options TNOM = {self.temp}",
             ".control",
-            save_internal_parameters,
+            self.save_internal_parameters,
             analysis_string,
+            "let i_vds = abs(i(vds))",
             f"write {self.output_file_path} all",
             ".endc",
             ".end",
@@ -102,7 +105,6 @@ class LookupTableGenerator:
     def __run_ngspice(self, circuit):
         with open(self.input_file_path, "w") as file:
             file.write("\n".join(circuit))
-
         ngspice_command = f"{NGSPICE_PATH} -b -o {self.log_file_path} {self.input_file_path}"
         subprocess.run(ngspice_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -111,25 +113,11 @@ class LookupTableGenerator:
         return ars
 
     def __save_ngspice_parameters(self, analysis, mos, length, vsb):
-        parameter_names = {
-            "id": "i(@m1[id])",
-            "vth": "v(@m1[vth])",
-            "gm": "@m1[gm]",
-            "gmbs": "@m1[gmbs]",
-            "gds": "@m1[gds]",
-            "cgg": "@m1[cgg]",
-            "cgs": "@m1[cgs]",
-            "cbg": "@m1[cbg]",
-            "cgd": "@m1[cgd]",
-            "cdd": "@m1[cdd]",
-            "vdsat": "v(@m1[vdsat])",
-        }
-
         column_names = analysis[0].dtype.names
         data = analysis[0]
 
-        for p in self.parameter_names:
-            col_name = parameter_names[p]
+        for p in self.parameter_table.keys():
+            col_name = self.parameter_table[p][1]
             if col_name in column_names:
                 res = np.array(data[col_name])
                 self.lookup_table[self.identifier][p][length][vsb] = res.reshape(self.n_vgs, self.n_vds)
@@ -137,23 +125,25 @@ class LookupTableGenerator:
     ################################################################################
     #                                    HSPICE                                    #
     ################################################################################
-    def __hspice_simulator_setup(self, mos):
-        save_internal_parameters = [
-            ".probe DC m_id   = par('-i(m1)')",
-            ".probe DC m_vt   = par('vth(m1)')",
-            ".probe DC m_gm   = par('gmo(m1)')",
-            ".probe DC m_gmb  = par('gmbso(m1)')",
-            ".probe DC m_gds  = par('gdso(m1)')",
-            ".probe DC m_cgg  = par('cggbo(m1)')",
-            ".probe DC m_cgs  = par('-cgsbo(m1)')",
-            ".probe DC m_cbs  = par('-cbgbo(m1)')",
-            ".probe DC m_cgd  = par('-cgdbo(m1)')",
-            ".probe DC m_cgb  = par('cggbo(m1)-(-cgsbo(m1))-(-cgdbo(m1))')",
-            ".probe DC m_cdd  = par('cddbo(m1)')",
-            ".probe DC m_css  = par('-cgsbo(m1)-cbsbo(m1)')",
-            ".probe DC m_vdsat = par('vdsat(m1)')",
-        ]
+    def __hspice_parameters(self):
+        self.parameter_table = {
+            # parameter name : [name recognized by simulator, name used in the output file],
+            "id"   : [".probe DC m_id    = par('-i(m1)')"                             , "i_m1"],
+            "vth"  : [".probe DC m_vth   = par('vth(m1)')"                            , "vth_m1"],
+            "vdsat": [".probe DC m_vdsat = par('vdsat(m1)')"                          , "vdsat_m1"],
+            "gm"   : [".probe DC m_gm    = par('gmo(m1)')"                            , "gmo_m1"],
+            "gmbs" : [".probe DC m_gmb   = par('gmbso(m1)')"                          , "gmbso_m1"],
+            "gds"  : [".probe DC m_gds   = par('gdso(m1)')"                           , "gdso_m1"],
+            "cgg"  : [".probe DC m_cgg   = par('cggbo(m1)')"                          , "cggbo_m1"],
+            "cgs"  : [".probe DC m_cgs   = par('-cgsbo(m1)')"                         , "cgsbo_m1"],
+            "cgd"  : [".probe DC m_cgd   = par('-cgdbo(m1)')"                         , "cgdbo_m1"],
+            "cgb"  : [".probe DC m_cgb   = par('cggbo(m1)-(-cgsbo(m1))-(-cgdbo(m1))')", "cgbbo_m1"],
+            "cdd"  : [".probe DC m_cdd   = par('cddbo(m1)')"                          , "cddbo_m1"],
+            "css"  : [".probe DC m_css   = par('-cgsbo(m1)-cbsbo(m1)')"               , "cssbo_m1"],
+        }
+        self.save_internal_parameters = "\n".join([values[0] for values in self.parameter_table.values()])
 
+    def __hspice_simulator_setup(self):
         vgs_start, vgs_stop, vgs_step = self.vgs
         vds_start, vds_stop, vds_step = self.vds
         analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
@@ -162,7 +152,7 @@ class LookupTableGenerator:
             f".TEMP = {self.temp}",
             ".options dccap brief accurate",
             ".option POST=2",
-            "\n".join(save_internal_parameters),
+            self.save_internal_parameters,
             analysis_string,
             ".end",
         ]
@@ -171,7 +161,6 @@ class LookupTableGenerator:
     def __run_hspice(self, circuit):
         with open(self.input_file_path, "w") as file:
             file.write("\n".join(circuit))
-
         hspice_command = f"{HSPICE_PATH} -i {self.input_file_path} -o {tempfile.gettempdir()}"
         subprocess.run(hspice_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -182,22 +171,8 @@ class LookupTableGenerator:
         return loaded_data
 
     def __save_hspice_parameters(self, analysis, mos, length, vsb):
-        hspice_parameter_names = {
-                "id": "i_m1",
-                "vth": "vth_m1",
-                "gm": "gmo_m1",
-                "gmbs": "gmbso_m1",
-                "gds": "gdso_m1",
-                "cgg": "cggbo_m1",
-                "cgs": "cgsbo_m1",
-                "cbg": "cbgbo_m1",
-                "cgd": "cgdbo_m1",
-                "cdd": "cddbo_m1",
-                "vdsat": "vdsat_m1",
-        }
-
-        for p in self.parameter_names:
-            col_name = hspice_parameter_names[p]
+        for p in self.parameter_table.keys():
+            col_name = self.parameter_table[p][1]
             if col_name in analysis.keys():
                 res = np.array(analysis[col_name]).T
                 self.lookup_table[self.identifier][p][length][vsb] = res
@@ -212,16 +187,18 @@ class LookupTableGenerator:
         self.n_vgs = round((self.vgs[1] - self.vgs[0]) / self.vgs[2]) + 1
 
         self.lookup_table[self.identifier] = {}
-        for p in self.parameter_names:
+        for p in self.parameter_table:
             self.lookup_table[self.identifier][p] = np.zeros(shape=(self.n_lengths, self.n_vsb, self.n_vgs, self.n_vds))
 
         # choose right simulator
         if self.simulator == "ngspice":
+            self.__ngspice_parameters()
             self.simulator_setup = self.__ngspice_simulator_setup
             self.run = self.__run_ngspice
             self.parse = self.__parse_ngspice_output
             self.save = self.__save_ngspice_parameters
         elif self.simulator == "hspice":
+            self.__hspice_parameters()
             self.simulator_setup = self.__hspice_simulator_setup
             self.run = self.__run_hspice
             self.parse = self.__parse_hspice_output
@@ -250,7 +227,7 @@ class LookupTableGenerator:
             print(f"-- length={length}")
             for idy, vsb in enumerate(np.linspace(self.vsb[0], self.vsb[1], self.n_vsb)):
                 circuit = self.__generate_netlist(length, vsb)
-                simulator = self.simulator_setup(mos)
+                simulator = self.simulator_setup()
                 circuit.extend(simulator)
                 self.run(circuit)
                 analysis = self.parse()
@@ -258,7 +235,7 @@ class LookupTableGenerator:
 
     def __save_to_dictionary(self):
         self.lookup_table["description"] = self.description
-        self.lookup_table["parameter_names"] = self.parameter_names
+        self.lookup_table["parameter_names"] = list(self.parameter_table.keys())
         self.lookup_table["w"] = self.width
         self.lookup_table["l"] = self.lengths
 
@@ -279,9 +256,11 @@ class LookupTableGenerator:
         self.identifier = "nmos"
         circuit = self.__generate_netlist(self.lengths[0], 0)
         if self.simulator == "ngspice":
-            simulator = self.__ngspice_simulator_setup(self.identifier)
+            self.__ngspice_parameters()
+            simulator = self.__ngspice_simulator_setup()
         elif self.simulator == "hspice":
-            simulator = self.__hspice_simulator_setup(self.identifier)
+            self.__hspice_parameters()
+            simulator = self.__hspice_simulator_setup()
         circuit.extend(simulator)
         print("---------------------------------------------------")
         print("----- This is the netlist that gets simulated -----")
@@ -316,3 +295,4 @@ class LookupTableGenerator:
         # Remove tmp files
         self.__remove_tmp_files()
         print("Done")
+
