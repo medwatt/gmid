@@ -85,8 +85,8 @@ class LookupTableGenerator:
         self.save_internal_parameters = "\n".join([values[0] for values in self.parameter_table.values()])
 
     def __ngspice_simulator_setup(self):
-        vgs_start, vgs_stop, vgs_step = self.vgs
-        vds_start, vds_stop, vds_step = self.vds
+        vgs_start, vgs_stop, vgs_step = self.vgs * self.r
+        vds_start, vds_stop, vds_step = self.vds * self.r
         analysis_string = f"dc VDS {vds_start} {vds_stop} {vds_step} VGS {vgs_start} {vgs_stop} {vgs_step}"
 
         simulator = [
@@ -144,8 +144,8 @@ class LookupTableGenerator:
         self.save_internal_parameters = "\n".join([values[0] for values in self.parameter_table.values()])
 
     def __hspice_simulator_setup(self):
-        vgs_start, vgs_stop, vgs_step = self.vgs
-        vds_start, vds_stop, vds_step = self.vds
+        vgs_start, vgs_stop, vgs_step = self.vgs * self.r
+        vds_start, vds_stop, vds_step = self.vds * self.r
         analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
 
         simulator = [
@@ -295,4 +295,3 @@ class LookupTableGenerator:
         # Remove tmp files
         self.__remove_tmp_files()
         print("Done")
-

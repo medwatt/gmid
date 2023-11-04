@@ -1,43 +1,95 @@
-#-----------------------------------------------------------------------------#
+# -----------------------------------------------------------------------------#
 # Author: Mohamed Watfa
 # URL: https://github.com/medwatt/
-#-----------------------------------------------------------------------------#
+# -----------------------------------------------------------------------------#
 import numpy as np
 from scipy.interpolate import interpn
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.ticker import EngFormatter
+from matplotlib.widgets import Cursor
 
 # don't warn user about bad divisions
 np.seterr(divide="ignore", invalid="ignore")
 
-# plot settings
+# plot settings {{{
 FIG_SIZE = (8, 4)
 LINE_WIDTH = 1.5
 GRID_COLOR = "0.9"
 
 PLOT_SETTINGS = {
-    'FIG_SIZE': FIG_SIZE,
-    'LINE_WIDTH': LINE_WIDTH,
-    'GRID_COLOR': GRID_COLOR,
-    }
+    "FIG_SIZE": FIG_SIZE,
+    "LINE_WIDTH": LINE_WIDTH,
+    "GRID_COLOR": GRID_COLOR,
+}
+
 
 def set_plot_settings(var_name, new_value):
     global FIG_SIZE, LINE_WIDTH, GRID_COLOR
     if var_name in PLOT_SETTINGS:
         globals()[var_name] = new_value
 
+
+# }}}
+
+# matplotlib interraction {{{
+dots = []
+annotations = []
+
+def on_canvas_click(event, fig, ax):
+    if fig.canvas.toolbar.mode != '':
+        return
+
+    x = event.xdata
+    y = event.ydata
+
+    if x is None or y is None:
+        return
+
+    print(f"x={x}, y={y}")
+
+    (dot,) = ax.plot(x, y, "ro")
+    dots.append(dot)
+
+    formatter = EngFormatter()
+    x_eng = formatter(x)
+    y_eng = formatter(y)
+    annotation = ax.annotate(
+        f"({x_eng}, {y_eng})",
+        (x, y),
+        textcoords="offset points",
+        xytext=(0, 10),
+        ha="center",
+    )
+    annotations.append(annotation)
+
+    fig.canvas.draw()
+
+def clear_annotations_and_dots(fig):
+    for dot in dots:
+        dot.remove()
+    for annotation in annotations:
+        annotation.remove()
+    fig.canvas.draw()
+    dots.clear()
+    annotations.clear()
+
+
+# }}}
+
+
 def load_lookup_table(path: str):
     return np.load(path, allow_pickle=True).tolist()
 
+
 class GMID:
-    ### init method {{{
+    # init method {{{
     def __init__(self, lookup_table: dict, *, mos: str, vsb=None, vgs=None, vds=None, slice_independent=None):
         # extract from table
         self.parameters = lookup_table["parameter_names"]
         self.w = lookup_table["w"]
         self.l = lookup_table["l"]
-        self.lengths = self.l # just an alias
+        self.lengths = self.l  # just an alias
 
         self.mos = mos
         self.lookup_table = lookup_table[mos]
@@ -53,10 +105,11 @@ class GMID:
 
         # extract parameters by varying the independent source
         self.__extract_parameters_by_independent_source()
-    ### }}}
 
-    ### private function: parse argument list to determine the independent source{{{
-    def __parse_source_list(self, args : dict):
+    # }}}
+
+    # private function: parse argument list to determine the independent source{{{
+    def __parse_source_list(self, args: dict):
         sources = {"vsb": None, "vgs": None, "vds": None}
         independent_variable = list(sources.keys())
         fixed_variables = []
@@ -73,9 +126,10 @@ class GMID:
         sources[self.independent_variable] = self.independent_source
         self.voltage_sources = sources
         self.fixed_variables = fixed_variables
-    ### }}}
 
-    ### private function: parse argument list of lookup function {{{
+    # }}}
+
+    # private function: parse argument list of lookup function {{{
     def __parse_arg_list(self, arg: dict):
         variables = {"length": None, "vsb": None, "vgs": None, "vds": None}
         primary = arg["primary"]
@@ -94,9 +148,10 @@ class GMID:
         if not primary_variable and secondary_variable:
             primary_variable, secondary_variable = secondary_variable, ""
         return variables, primary_variable, secondary_variable
-    ### }}}
 
-    ### private function: define commonly-used expressions {{{
+    # }}}
+
+    # private function: define commonly-used expressions {{{
     def __common_expressions(self):
         self.vgs_expression = {
             "variables": ["vgs"],
@@ -135,9 +190,10 @@ class GMID:
             "function": lambda x, y: x / y,
             "label": "$V_{A} (V)$",
         }
-    ### }}}
 
-    ### private function: calculate parameter from expression {{{
+    # }}}
+
+    # private function: calculate parameter from expression {{{
     def __calculate_from_expression(
         self,
         expression: dict,
@@ -159,9 +215,10 @@ class GMID:
             return values, expression["label"]
         except KeyError:
             return values, ""
-    ### }}}
 
-    ### private function: extract parameters by varying the independent source {{{
+    # }}}
+
+    # private function: extract parameters by varying the independent source {{{
     def __extract_parameters_by_independent_source(self):
         title_label = []
         lookup_table = self.lookup_table
@@ -202,7 +259,7 @@ class GMID:
         extracted_table["title"] = f"{lookup_table['model_name']}, " + "$%s=%.2f$, $%s=%.2f$" % tuple(title_label)
 
         legend_formatter = EngFormatter(unit="m")
-        extracted_table["label"] = [ legend_formatter.format_eng(sw) for sw in self.l ]
+        extracted_table["label"] = [legend_formatter.format_eng(sw) for sw in self.l]
 
         if self.independent_variable == "vds":
             self.independent_source_expression = self.vds_expression
@@ -212,9 +269,9 @@ class GMID:
             self.independent_source_expression = self.vsb_expression
 
         self.extracted_table = extracted_table
-        ### }}}
+        # }}}
 
-    ### private function: plot settings {{{
+    # private function: plot settings {{{
     def __plot_settings(
         self,
         fig,
@@ -264,9 +321,10 @@ class GMID:
 
         if save_fig:
             fig.savefig(save_fig)
-    ### }}}
 
-    ### private function: look for a value using a calculated expression {{{
+    # }}}
+
+    # private function: look for a value using a calculated expression {{{
     def __lookup_by(
         self,
         length: float,
@@ -274,23 +332,18 @@ class GMID:
         val: float,
         dependent_expression: str | dict,
     ):
-        values, _ = self.__calculate_from_expression(
-            independent_expression, self.extracted_table
-        )
+        values, _ = self.__calculate_from_expression(independent_expression, self.extracted_table)
         g = values[(np.abs(self.extracted_table["l"] - length)).argmin()]
         if dependent_expression:
-            values, _ = self.__calculate_from_expression(
-                dependent_expression, self.extracted_table
-            )
+            values, _ = self.__calculate_from_expression(dependent_expression, self.extracted_table)
         else:
-            values, _ = self.__calculate_from_expression(
-                dependent_expression, self.extracted_table
-            )
+            values, _ = self.__calculate_from_expression(dependent_expression, self.extracted_table)
         point = np.array([length, val])
         return interpn((self.lookup_table["l"], g), values, point)
-    ### }}}
 
-    ### quick plot {{{
+    # }}}
+
+    # quick plot {{{
     def quick_plot(
         self,
         x: np.ndarray | list | tuple,
@@ -312,12 +365,15 @@ class GMID:
         them to this function as x.T and y.T
         """
         fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE, tight_layout=True)
+        fig.canvas.mpl_connect("button_press_event", lambda event: on_canvas_click(event, fig, ax))
+        fig.canvas.mpl_connect("key_press_event", lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None)
 
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            ax.plot(x, y, lw=LINE_WIDTH)
+            ax.plot(x, y, lw=LINE_WIDTH, picker=True)
+
         if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
             for x_, y_ in zip(x, y):
-                ax.plot(x_, y_, lw=LINE_WIDTH)
+                ax.plot(x_, y_, lw=LINE_WIDTH, picker=True)
             y = y[0]
 
         self.__plot_settings(
@@ -335,9 +391,10 @@ class GMID:
             legend=legend,
             save_fig=save_fig,
         )
-    ### }}}
 
-    ### function: plot by expression {{{
+    # }}}
+
+    # function: plot by expression {{{
     def plot_by_expression(
         self,
         *,
@@ -369,7 +426,11 @@ class GMID:
         y, y_label = self.__calculate_from_expression(y_axis, extracted_table, lengths_idx)
 
         fig, ax = plt.subplots(1, 1, figsize=(8, 4), tight_layout=True)
-        ax.plot(x.T, y.T, lw=LINE_WIDTH)
+        fig.canvas.mpl_connect("button_press_event", lambda event: on_canvas_click(event, fig, ax))
+        fig.canvas.mpl_connect("key_press_event", lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None)
+
+        ax.plot(x.T, y.T, lw=LINE_WIDTH, picker=True)
+
         self.__plot_settings(
             fig,
             ax,
@@ -391,9 +452,10 @@ class GMID:
 
         if return_result:
             return x.T, y.T
-    ### }}}
 
-    ### function: plot by sweep {{{
+    # }}}
+
+    # function: plot by sweep {{{
     def plot_by_sweep(
         self,
         *,
@@ -416,8 +478,6 @@ class GMID:
         return_result: bool = False,
     ):
         _, primary_variable, secondary_variable = self.__parse_arg_list(locals())
-
-        print(primary_variable, secondary_variable)
 
         if primary_variable not in x_axis_expression["variables"]:
             x = self.lookup(
@@ -454,10 +514,7 @@ class GMID:
 
         if secondary_variable:
             legend_formatter = EngFormatter(unit="m")
-            legend = [
-                legend_formatter.format_eng(sw)
-                for sw in np.arange(*locals()[secondary_variable])
-            ]
+            legend = [legend_formatter.format_eng(sw) for sw in np.arange(*locals()[secondary_variable])]
         else:
             legend = []
 
@@ -493,9 +550,10 @@ class GMID:
         )
         if return_result:
             return (x, y)
-    ### }}}
 
-    ### function: lookup a parameter from the table usign values used in defining the table {{{
+    # }}}
+
+    # function: lookup a parameter from the table usign values used in defining the table {{{
     def lookup(
         self,
         *,
@@ -533,9 +591,7 @@ class GMID:
         values, _ = self.__calculate_from_expression(expression, self.lookup_table)
 
         # parse argument list
-        variables, primary_variable, secondary_variable = self.__parse_arg_list(
-            locals()
-        )
+        variables, primary_variable, secondary_variable = self.__parse_arg_list(locals())
 
         if not (primary_variable or secondary_variable):
             point = np.array(list(variables.values()))
@@ -547,18 +603,14 @@ class GMID:
                 secondary_range = variables[secondary_variable]
             else:
                 m = 1
-                secondary_range = np.array(
-                    [1]
-                )  # put any value to make the for loop start
+                secondary_range = np.array([1])  # put any value to make the for loop start
             result = np.zeros(shape=(m, n))
             for i, s in enumerate(secondary_range):
                 stack_points = []
                 for k, v in variables.items():
                     if k == primary_variable:
                         stack_points.append(v)
-                    elif (
-                        k == secondary_variable
-                    ):  # this condition will never be meet when m=1
+                    elif k == secondary_variable:  # this condition will never be meet when m=1
                         stack_points.append(np.repeat(s, n))
                     else:
                         stack_points.append(np.repeat(v, n))
@@ -568,12 +620,11 @@ class GMID:
                 return result
             else:
                 return result[0]
-    ### }}}
 
-    ### function: lookup a parameter by gmid from the extracted table {{{
-    def lookup_by_gmid(
-        self, length: float | tuple, gmid: float, expression: str | dict
-    ) -> np.ndarray:
+    # }}}
+
+    # function: lookup a parameter by gmid from the extracted table {{{
+    def lookup_by_gmid(self, length: float | tuple, gmid: float, expression: str | dict) -> np.ndarray:
         """
         Return the interpolated value calculated by `expression` for  given
         `length` and `gmid` variables.
@@ -595,9 +646,10 @@ class GMID:
             return result
         elif isinstance(length, float):
             return self.__lookup_by(length, self.gmid_expression, gmid, expression)
-    ### }}}
 
-    ### collection of commonly-used plot functions {{{
+    # }}}
+
+    # collection of commonly-used plot functions {{{
     def current_density_plot(
         self,
         x_limit: tuple = (),
@@ -675,6 +727,8 @@ class GMID:
             save_fig=save_fig,
             return_result=return_result,
         )
-### }}}
 
-## vim:fdm=marker
+
+# }}}
+
+# vim:fdm=marker
