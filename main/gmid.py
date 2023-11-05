@@ -2,6 +2,7 @@
 # Author: Mohamed Watfa
 # URL: https://github.com/medwatt/
 # -----------------------------------------------------------------------------#
+from functools import partial
 import numpy as np
 from scipy.interpolate import interpn
 import matplotlib as mpl
@@ -36,8 +37,9 @@ def set_plot_settings(var_name, new_value):
 dots = []
 annotations = []
 
+
 def on_canvas_click(event, fig, ax):
-    if fig.canvas.toolbar.mode != '':
+    if fig.canvas.toolbar.mode != "":
         return
 
     x = event.xdata
@@ -65,6 +67,7 @@ def on_canvas_click(event, fig, ax):
 
     fig.canvas.draw()
 
+
 def clear_annotations_and_dots(fig):
     for dot in dots:
         dot.remove()
@@ -84,7 +87,9 @@ def load_lookup_table(path: str):
 
 class GMID:
     # init method {{{
-    def __init__(self, lookup_table: dict, *, mos: str, vsb=None, vgs=None, vds=None, slice_independent=None):
+    def __init__(
+        self, lookup_table: dict, *, mos: str, vsb=None, vgs=None, vds=None, slice_independent=None
+    ):
         # extract from table
         self.parameters = lookup_table["parameter_names"]
         self.w = lookup_table["w"]
@@ -102,6 +107,7 @@ class GMID:
 
         # define commonly-used expressions to avoid typing them every time
         self.__common_expressions()
+        self.__common_plot_methods()
 
         # extract parameters by varying the independent source
         self.__extract_parameters_by_independent_source()
@@ -148,48 +154,6 @@ class GMID:
         if not primary_variable and secondary_variable:
             primary_variable, secondary_variable = secondary_variable, ""
         return variables, primary_variable, secondary_variable
-
-    # }}}
-
-    # private function: define commonly-used expressions {{{
-    def __common_expressions(self):
-        self.vgs_expression = {
-            "variables": ["vgs"],
-            "label": "$V_{\\mathrm{GS}} (V)$",
-        }
-        self.vds_expression = {
-            "variables": ["vds"],
-            "label": "$V_{\\mathrm{DS}} (V)$",
-        }
-        self.vsb_expression = {
-            "variables": ["vsb"],
-            "label": "$V_{\\mathrm{SB}} (V)$",
-        }
-        self.gmid_expression = {
-            "variables": ["gm", "id"],
-            "function": lambda x, y: x / y,
-            "label": "$g_m/I_D (S/A)$",
-        }
-        self.gain_expression = {
-            "variables": ["gm", "gds"],
-            "function": lambda x, y: x / y,
-            "label": "$g_{m}/g_{\\mathrm{ds}}$",
-        }
-        self.current_density_expression = {
-            "variables": ["id", "w"],
-            "function": lambda x, y: x / y,
-            "label": "$I_{D}/W (A/m)$",
-        }
-        self.transist_frequency_expression = {
-            "variables": ["gm", "cgg"],
-            "function": lambda x, y: x / (2 * np.pi * y),
-            "label": "$f_{T} (Hz)$",
-        }
-        self.early_voltage_expression = {
-            "variables": ["id", "gds"],
-            "function": lambda x, y: x / y,
-            "label": "$V_{A} (V)$",
-        }
 
     # }}}
 
@@ -250,13 +214,19 @@ class GMID:
 
         # TODO-SLICING
         if not self.slice_independent:
-            extracted_table[self.independent_variable] = np.tile(lookup_table[self.independent_variable], (len(self.lengths), 1))
+            extracted_table[self.independent_variable] = np.tile(
+                lookup_table[self.independent_variable], (len(self.lengths), 1)
+            )
         else:
-            extracted_table[self.independent_variable] = np.tile(lookup_table[self.independent_variable][slice_idx[var]], (len(self.lengths), 1))
+            extracted_table[self.independent_variable] = np.tile(
+                lookup_table[self.independent_variable][slice_idx[var]], (len(self.lengths), 1)
+            )
 
         extracted_table["w"] = np.array(self.w)
         extracted_table["l"] = self.l
-        extracted_table["title"] = f"{lookup_table['model_name']}, " + "$%s=%.2f$, $%s=%.2f$" % tuple(title_label)
+        extracted_table[
+            "title"
+        ] = f"{lookup_table['model_name']}, " + "$%s=%.2f$, $%s=%.2f$" % tuple(title_label)
 
         legend_formatter = EngFormatter(unit="m")
         extracted_table["label"] = [legend_formatter.format_eng(sw) for sw in self.l]
@@ -330,7 +300,7 @@ class GMID:
         length: float,
         independent_expression: dict,
         val: float,
-        dependent_expression: str | dict,
+        dependent_expression: dict,
     ):
         values, _ = self.__calculate_from_expression(independent_expression, self.extracted_table)
         g = values[(np.abs(self.extracted_table["l"] - length)).argmin()]
@@ -366,7 +336,10 @@ class GMID:
         """
         fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE, tight_layout=True)
         fig.canvas.mpl_connect("button_press_event", lambda event: on_canvas_click(event, fig, ax))
-        fig.canvas.mpl_connect("key_press_event", lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None)
+        fig.canvas.mpl_connect(
+            "key_press_event",
+            lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None,
+        )
 
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
             ax.plot(x, y, lw=LINE_WIDTH, picker=True)
@@ -427,7 +400,10 @@ class GMID:
 
         fig, ax = plt.subplots(1, 1, figsize=(8, 4), tight_layout=True)
         fig.canvas.mpl_connect("button_press_event", lambda event: on_canvas_click(event, fig, ax))
-        fig.canvas.mpl_connect("key_press_event", lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None)
+        fig.canvas.mpl_connect(
+            "key_press_event",
+            lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None,
+        )
 
         ax.plot(x.T, y.T, lw=LINE_WIDTH, picker=True)
 
@@ -514,7 +490,9 @@ class GMID:
 
         if secondary_variable:
             legend_formatter = EngFormatter(unit="m")
-            legend = [legend_formatter.format_eng(sw) for sw in np.arange(*locals()[secondary_variable])]
+            legend = [
+                legend_formatter.format_eng(sw) for sw in np.arange(*locals()[secondary_variable])
+            ]
         else:
             legend = []
 
@@ -624,7 +602,7 @@ class GMID:
     # }}}
 
     # function: lookup a parameter by gmid from the extracted table {{{
-    def lookup_by_gmid(self, length: float | tuple, gmid: float, expression: str | dict) -> np.ndarray:
+    def lookup_by_gmid(self, length: float | tuple, gmid: float, expression: dict):
         """
         Return the interpolated value calculated by `expression` for  given
         `length` and `gmid` variables.
@@ -638,95 +616,138 @@ class GMID:
                 expression=nmos.gain_expression
             )
         """
+        return self.lookup_by_expression(
+            length=length,
+            look_by_expression=self.gmid_expression,
+            look_by_value=gmid,
+            look_for_expression=expression,
+        )
+
+    # }}}
+
+    # function: lookup a parameter by an expression from the extracted table {{{
+    def lookup_by_expression(
+        self,
+        length: float | tuple,
+        look_by_expression: dict,
+        look_by_value,
+        look_for_expression: dict,
+    ):
         if isinstance(length, tuple):
             length = np.arange(*length)
             result = np.empty(shape=(length.size,))
             for i, v in enumerate(length):
-                result[i] = self.__lookup_by(v, self.gmid_expression, gmid, expression)
+                result[i] = self.__lookup_by(
+                    v, look_by_expression, look_by_value, look_for_expression
+                )
             return result
         elif isinstance(length, float):
-            return self.__lookup_by(length, self.gmid_expression, gmid, expression)
+            return self.__lookup_by(length, look_by_expression, look_by_value, look_for_expression)
 
     # }}}
 
-    # collection of commonly-used plot functions {{{
-    def current_density_plot(
-        self,
-        x_limit: tuple = (),
-        y_limit: tuple = (),
-        x_scale: str = "",
-        y_scale: str = "",
-        lengths: tuple = (),
-        save_fig: str = "",
-        return_result: bool = False,
-    ):
-        return self.plot_by_expression(
-            x_axis=self.gmid_expression,
-            y_axis=self.current_density_expression,
-            lengths=lengths,
-            x_scale=x_scale,
-            y_scale=y_scale,
-            x_limit=x_limit,
-            y_limit=y_limit,
-            save_fig=save_fig,
-            return_result=return_result,
-        )
+    # private function: define commonly-used expressions {{{
+    def __common_expressions(self):
+        # create attributes for parameters from the lookup table
+        LABEL_TABLE = {
+            "vsb": ["V_{\\mathrm{SB}}", "V"],
+            "vgs": ["V_{\\mathrm{GS}}", "V"],
+            "vds": ["V_{\\mathrm{DS}}", "V"],
+            "id": ["I_{D}", "A"],
+            "vth": ["V_{\\mathrm{TH}}", "V"],
+            "vdsat": ["V_{\\mathrm{DS_{\\mathrm{SAT}}}}", "V"],
+            "gm": ["g_{m}", "S"],
+            "gmbs": ["g_{\\mathrm{mbs}}", "S"],
+            "gds": ["g_{\\mathrm{ds}}", "S"],
+            "cgg": ["c_{\\mathrm{gg}}", "F"],
+            "cgs": ["c_{\\mathrm{gs}}", "F"],
+            "cbg": ["c_{\\mathrm{bg}}", "F"],
+            "cgd": ["c_{\\mathrm{gd}}", "F"],
+            "cdd": ["c_{\\mathrm{dd}}", "F"],
+        }
+        for parameter, (label, unit) in LABEL_TABLE.items():
+            if parameter in self.parameters or parameter in ["vsb", "vgs", "vds"]:
+                setattr(
+                    self,
+                    f"{parameter}_expression",
+                    {"variables": [parameter], "label": f"${label}\ ({unit})$"},
+                )
 
-    def gain_plot(
-        self,
-        x_limit: tuple = (),
-        y_limit: tuple = (),
-        lengths: tuple = (),
-        save_fig: str = "",
-        return_result: bool = False,
-    ):
-        return self.plot_by_expression(
-            x_axis=self.gmid_expression,
-            y_axis=self.gain_expression,
-            lengths=lengths,
-            x_limit=x_limit,
-            y_limit=y_limit,
-            save_fig=save_fig,
-            return_result=return_result,
-        )
+        self.gmid_expression = {
+            "variables": ["gm", "id"],
+            "function": lambda x, y: x / y,
+            "label": "$g_m/I_D (S/A)$",
+        }
+        self.vstar_expression = {
+            "variables": ["gm", "id"],
+            "function": lambda x, y: (2 * y) / x,
+            "label": "$V^{\\star} (V)$",
+        }
+        self.gain_expression = {
+            "variables": ["gm", "gds"],
+            "function": lambda x, y: x / y,
+            "label": "$g_{m}/g_{\\mathrm{ds}}$",
+        }
+        self.current_density_expression = {
+            "variables": ["id", "w"],
+            "function": lambda x, y: x / y,
+            "label": "$I_{D}/W (A/m)$",
+        }
+        self.transist_frequency_expression = {
+            "variables": ["gm", "cgg"],
+            "function": lambda x, y: x / (2 * np.pi * y),
+            "label": "$f_{T} (Hz)$",
+        }
+        self.early_voltage_expression = {
+            "variables": ["id", "gds"],
+            "function": lambda x, y: x / y,
+            "label": "$V_{A} (V)$",
+        }
 
-    def transit_frequency_plot(
-        self,
-        x_limit: tuple = (),
-        y_limit: tuple = (),
-        lengths: tuple = (),
-        save_fig: str = "",
-        return_result: bool = False,
-    ):
-        return self.plot_by_expression(
-            x_axis=self.gmid_expression,
-            y_axis=self.transist_frequency_expression,
-            lengths=lengths,
-            x_limit=x_limit,
-            y_limit=y_limit,
-            y_scale="linear",
-            y_eng_format=True,
-            save_fig=save_fig,
-            return_result=return_result,
-        )
+    # }}}
 
-    def early_voltage_plot(
-        self,
-        x_limit: tuple = (),
-        y_limit: tuple = (),
-        lengths: tuple = (),
-        save_fig: str = "",
-        return_result: bool = False,
-    ):
-        return self.plot_by_expression(
-            x_axis=self.gmid_expression,
-            y_axis=self.early_voltage_expression,
-            lengths=lengths,
-            x_limit=x_limit,
-            y_limit=y_limit,
-            save_fig=save_fig,
-            return_result=return_result,
-        )
+    # create commonly-used plot functions {{{
+    def __common_plot_methods(self):
+        PLOT_METHODS = {
+            "current_density_plot": [self.gmid_expression, self.current_density_expression],
+            "gain_plot": [self.gmid_expression, self.gain_expression],
+            "transit_frequency_plot": [self.gmid_expression, self.transist_frequency_expression],
+            "early_voltage_plot": [self.gmid_expression, self.early_voltage_expression],
+        }
+
+        # This is not ideal since I need to keep track of the signature of `plot_by_expression`.
+        # I can use `partial` from `functools` here, but it doesn't hide the bound variables, which I don't like.
+        def create_plot_method(self, x_axis, y_axis):
+            def plot_method(
+                self,
+                lengths: tuple = (),
+                x_limit: tuple = (),
+                y_limit: tuple = (),
+                x_scale: str = "",
+                y_scale: str = "",
+                x_eng_format: bool = False,
+                y_eng_format: bool = False,
+                save_fig: str = "",
+                return_result: bool = False,
+            ):
+                return self.plot_by_expression(
+                    x_axis=x_axis,
+                    y_axis=y_axis,
+                    lengths=lengths,
+                    x_scale=x_scale,
+                    y_scale=y_scale,
+                    x_limit=x_limit,
+                    y_limit=y_limit,
+                    x_eng_format=x_eng_format,
+                    y_eng_format=y_eng_format,
+                    save_fig=save_fig,
+                    return_result=return_result,
+                )
+
+            return plot_method
+
+        for method_name, (x, y) in PLOT_METHODS.items():
+            setattr(GMID, method_name, create_plot_method(self, x_axis=x, y_axis=y))
 
 
 # }}}
