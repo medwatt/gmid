@@ -128,18 +128,18 @@ class LookupTableGenerator:
     def __hspice_parameters(self):
         self.parameter_table = {
             # parameter name : [name recognized by simulator, name used in the output file],
-            "id"   : [".probe DC m_id    = par('-i(m1)')"                             , "i_m1"],
-            "vth"  : [".probe DC m_vth   = par('vth(m1)')"                            , "vth_m1"],
-            "vdsat": [".probe DC m_vdsat = par('vdsat(m1)')"                          , "vdsat_m1"],
-            "gm"   : [".probe DC m_gm    = par('gmo(m1)')"                            , "gmo_m1"],
-            "gmbs" : [".probe DC m_gmb   = par('gmbso(m1)')"                          , "gmbso_m1"],
-            "gds"  : [".probe DC m_gds   = par('gdso(m1)')"                           , "gdso_m1"],
-            "cgg"  : [".probe DC m_cgg   = par('cggbo(m1)')"                          , "cggbo_m1"],
-            "cgs"  : [".probe DC m_cgs   = par('-cgsbo(m1)')"                         , "cgsbo_m1"],
-            "cgd"  : [".probe DC m_cgd   = par('-cgdbo(m1)')"                         , "cgdbo_m1"],
-            "cgb"  : [".probe DC m_cgb   = par('cggbo(m1)-(-cgsbo(m1))-(-cgdbo(m1))')", "cgbbo_m1"],
-            "cdd"  : [".probe DC m_cdd   = par('cddbo(m1)')"                          , "cddbo_m1"],
-            "css"  : [".probe DC m_css   = par('-cgsbo(m1)-cbsbo(m1)')"               , "cssbo_m1"],
+            "id"   : [".probe DC m_id    = par('abs(i(vds))')"                        , "m_id"],
+            "vth"  : [".probe DC m_vth   = par('vth(m1)')"                            , "m_vth"],
+            "vdsat": [".probe DC m_vdsat = par('vdsat(m1)')"                          , "m_vdsat"],
+            "gm"   : [".probe DC m_gm    = par('gmo(m1)')"                            , "m_gm"],
+            "gmbs" : [".probe DC m_gmb   = par('gmbso(m1)')"                          , "m_gmb"],
+            "gds"  : [".probe DC m_gds   = par('gdso(m1)')"                           , "m_gds"],
+            "cgg"  : [".probe DC m_cgg   = par('cggbo(m1)')"                          , "m_cgg"],
+            "cgs"  : [".probe DC m_cgs   = par('-cgsbo(m1)')"                         , "m_cgs"],
+            "cgd"  : [".probe DC m_cgd   = par('-cgdbo(m1)')"                         , "m_cgd"],
+            "cgb"  : [".probe DC m_cgb   = par('cggbo(m1)-(-cgsbo(m1))-(-cgdbo(m1))')", "m_cgb"],
+            "cdd"  : [".probe DC m_cdd   = par('cddbo(m1)')"                          , "m_cdd"],
+            "css"  : [".probe DC m_css   = par('-cgsbo(m1)-cbsbo(m1)')"               , "m_css"],
         }
         self.save_internal_parameters = "\n".join([values[0] for values in self.parameter_table.values()])
 
@@ -150,7 +150,7 @@ class LookupTableGenerator:
 
         simulator = [
             f".TEMP = {self.temp}",
-            ".options dccap brief accurate",
+            ".options probe dccap brief accurate",
             ".option POST=2",
             self.save_internal_parameters,
             analysis_string,

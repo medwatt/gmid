@@ -302,6 +302,12 @@ class GMID:
             else:
                 ax.plot(x, y, lw=LINE_WIDTH, picker=True)
 
+        elif y.ndim == 1:
+            if y.shape[0] != x.shape[0]:
+                ax.plot(x.T, y, lw=LINE_WIDTH, picker=True)
+            else:
+                ax.plot(x, y, lw=LINE_WIDTH, picker=True)
+
 
         if legend:
             ax.legend(legend, loc="center left", bbox_to_anchor=(1, 0.5))
@@ -427,6 +433,7 @@ class GMID:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         legend: list = [],
+        title: str = "",
         save_fig: str = "",
     ):
         """
@@ -443,7 +450,7 @@ class GMID:
             y_eng_format,
             x_label,
             y_label,
-            self.plot_labels["title"],
+            title,
             save_fig,
         )
 
@@ -589,6 +596,19 @@ class GMID:
     ################################################################################
     #                                Lookup Methods                                #
     ################################################################################
+    def __tile_arrays(self, A, B):
+        if A.ndim == 1 and B.ndim == 2:
+            if A.shape[0] == B.shape[0]:
+                return np.tile(A, (B.shape[1], 1)).T, B
+            elif A.shape[0] == B.shape[1]:
+                return np.tile(A, (B.shape[0], 1)), B
+        elif B.ndim == 1 and A.ndim == 2:
+            if B.shape[0] == A.shape[0]:
+                return A, np.tile(B, (A.shape[1], 1)).T
+            elif B.shape[0] == A.shape[1]:
+                return A, np.tile(B, (A.shape[0], 1))
+        return A, B
+
     def lookup_by(self, *, independent_expression, independent_value, look_by_expression, look_by_value, look_for_expression):
         """
         Given (1) a value of one of the indpendent variables
@@ -626,21 +646,29 @@ class GMID:
             self.vds_expression
         ]
         for item_index, item in enumerate(independent_expressions):
+            # bad choice of name for independent_expression and independent_expressions
             if independent_expression is item:
                 independent_expression = [self.lengths, self.vsb, self.vgs, self.vds][item_index]
                 break
         else:
-            raise ValueError("Indepndent expression must be one of the following: lengths, vsb, vgs, vds")
+            raise ValueError("Independent expression must be one of the following: lengths, vsb, vgs, vds")
 
-        if look_for_expression is self.lengths_expression:
-            look_for_expression_values = np.tile(self.lengths, (look_by_expression_2_values.shape[1], 1))
+        # TODO: Urgent
+        if look_for_expression in independent_expressions:
+            item_index_2 = independent_expressions.index(look_for_expression)
+            arr = [self.lengths, self.vsb, self.vgs, self.vds][item_index_2]
+            look_for_expression_values, look_by_expression_2_values = self.__tile_arrays(arr, look_by_expression_2_values)
+        ## END TODO
 
-        # filter the look_by_value based on the independent value
         closest_match_index = np.abs(self.filtered_variables[item_index] - independent_value).argmin()
+
         if item_index == 0:
-            look_by_expression_2_values = np.sort(look_by_expression_2_values[closest_match_index])
+            look_by_expression_2_values = look_by_expression_2_values[closest_match_index]
         else:
-            look_by_expression_2_values = np.sort(look_by_expression_2_values[:, closest_match_index])
+            look_by_expression_2_values = look_by_expression_2_values[:, closest_match_index]
+
+        if look_by_expression_1_values.shape[0] != look_for_expression_values.shape[0]:
+            look_for_expression_values = look_for_expression_values.T
 
         points = (
             look_by_expression_1_values,
@@ -649,13 +677,19 @@ class GMID:
 
         point_to_interpolate = np.array([independent_value, look_by_value])
 
-        interpolated_value = interpn(
-            points,
-            look_for_expression_values,
-            point_to_interpolate,
-        )
 
-        return interpolated_value[0] if interpolated_value.size > 0 else None
+        try:
+            interpolated_value = interpn(
+                points,
+                look_for_expression_values,
+                point_to_interpolate,
+            )
+
+            return interpolated_value[0] if interpolated_value.size > 0 else None
+
+        except ValueError as e:
+            # "Interpolation failed due to improper grid dimensions, mismatched data shapes, points outside the grid bounds, or invalid data types or values."
+            return f"Failed to interpolate: {str(e)}"
 
     def lookup_by_gmid(self, *, length, gmid, expression):
         """
