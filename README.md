@@ -76,7 +76,7 @@ A summary of some of the parameters is given below:
   the form `(start, stop, step)`. The smaller the step size, the bigger is the
   size of the lookup table.
 
-- The `length` can be provided as a list of discrete values or a 1-dimensional
+- The `lengths` can be provided as a list of discrete values or a 1-dimensional
   `numpy` array.
 
 - Only a single `width` should be provided. The assumption here is that the
@@ -94,12 +94,21 @@ script within a `jupyter` notebook is highly recommended.
 
 ### Imports
 
+If the `gmid.py` file is located somewhere not in the same directory as the
+file you're running, add its path so that the interpreter knows about it.
+
+```
+import sys
+sys.path.insert(0, "path/to/parent/directory/of/gmid.py file")
+```
+
 We begin by making the following imports:
 
 ```python
 import numpy as np
 from gmid import load_lookup_table, GMID
 ```
+
 
 The `load_lookup_table` function loads a lookup table such as the one generated
 in the previous section.
@@ -125,12 +134,13 @@ some fixed values. Since the data is 4-dimensional, it is necessary to fix two
 of the variables at a time to enable 2-dimensional plotting.
 
 ```python
-nmos = GMID(lookup_table, mos="nmos", vsb=0.0, vds=0.5)
+nmos = GMID(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
 ```
 
-The above code filters the table at `vsb=0.0` and `vds=0.5` for all values of
-`vgs`. If, for some reason, you also need to filter the third variable, you can
-use the parameter `slice_independent=(start,stop)`.
+The above code filters the table at `vsb=0.0` and `vds=0.5` for all `lengths`
+and for `vgs` values between `(0.3, 1)`. You can also include a step such as
+`(0.3, 1, 0.02)`. If you want all values of `vgs`, either set it to `None` or
+don't include it.
 
 Methods are available to create the most commonly-used plots in the gm/ID
 methodology so that you don't have to type them. These are:
@@ -178,7 +188,7 @@ nmos.current_density_plot(
     y_scale = 'linear',
     x_limit = (5, 20),
     y_limit = (0, 300),
-    save_fig="path/to/save/figure/with/extension
+    save_fig="path/to/save/figure/with/extension"
 )
 ```
 
@@ -204,7 +214,7 @@ nmos.plot_by_expression(
 
 For this example, we want $V_{\mathrm{GS}}$ on the x-axis. Since $V_{\mathrm{GS}}$ is such a
 commonly-used expression, it is already defined in the code. Other
-commonly-used expressions are also defined.
+commonly-used expressions are also defined, such as:
 
 - `gmid_expression`
 - `vgs_expression`
@@ -224,6 +234,7 @@ parameter, as shown in the example below.
 ```python
 nmos.plot_by_expression(
     x_axis = nmos.vgs_expression,
+    # y_axis = nmos.id_expression, ## same as below
     y_axis = {
         "variables": ["id"],
         "label": "$I_D (A)$"
@@ -233,19 +244,129 @@ nmos.plot_by_expression(
 
 ![custom expression](./figures/nmos_custom_expression_2.svg)
 
-### Getting Plot Data
+## Looking Up Values
+
+While having plots is a good way to visualize trends, we might also just be
+interested in the raw value.
+
+![gain expression](./figures/nmos_gain_plot.svg)
+
+Looking at the figure above, it's hard to read the exact value on the y-axis
+for a particular value on the x-axis, especially more so when the scale is
+logarithmic. Also, what if we need to read the value for a length that
+is not defined in our lookup table?
+
+There are two ways to go about this:
+
+- Zoom in and click on the plot. This prints out the `x` and `y`
+  coordinates. Note, in jupyter notebooks, you need to execute `%matplotlib
+  widget` or `%matplotlib qt` to interact with the plot.
+
+- Use a lookup method to get a more precise value.
+
+### Lookup Using Interpolation
+
+The snippet below shows how we can lookup some value given the `length` and
+`gmid`. The returned value is calculated using interpolation from the
+available data. The accuracy of the result depends on how far the points
+are from those defined in the table.
+
+```python
+x = nmos.lookup_by_gmid(
+    length=180e-9,
+    gmid=15,
+    expression=nmos.gain_expression
+)
+```
+
+The above code returns a single point. If you want to make a plot of `gain`
+vs. `length`, just loop through in the usual manner.
+
+```python
+length_sweep = np.arange(100e-9, 1000e-9, 50e-9)
+gain_sweep = np.zeros_like(length_sweep)
+
+for idx, length in enumerate(length_sweep):
+    gain_sweep[idx] = nmos.lookup_by_gmid(
+        length=length,
+        gmid=15,
+        expression=nmos.gain_expression
+    )
+
+nmos.quick_plot(length_sweep, gain_sweep)
+```
+
+`lookup_by_gmid()` is a wrapper method over the more flexible method
+`lookup_by()`. The example below finds the interpolated length given a
+`vgs` and a `gmid`.
+
+```python
+x = nmos.lookup_by(
+    independent_expression=nmos.vgs_expression,
+    independent_value=0.65,
+    look_by_expression=nmos.gmid_expression,
+    look_by_value=15,
+    look_for_expression=nmos.lengths_expression,
+)
+```
+
+### Lookup By Expression
+
+`lookup_expression_from_table()` simply looks up an expression from the
+table. It doesn't use any interpolation. So, make sure that the values you
+are looking up are present in the table.
+
+```python
+x = nmos.lookup_expression_from_table(
+    lengths=100e-9,
+    vsb=0,
+    vds=(0.0, 1, 0.01),
+    vgs=(0.0, 1.01, 0.2),
+    primary="vds",
+    expression=nmos.current_density_expression,
+)
+```
+
+## Plotting Methods
+
+### Plot by Sweep
+
+The `plot_by_sweep` method is extremely flexible and can be used to create
+all sorts of plots. For example, the snippet below shows how to plot the
+traditional output characteristic plot of a MOSFET.
+
+```python
+nmos.plot_by_sweep(
+    lengths=180e-9,
+    vsb = 0,
+    vds = (0.0, 1, 0.01), # you can also set to `None`
+    vgs = (0.0, 1.01, 0.2),
+    x_axis_expression = nmos.vds_expression,
+    y_axis_expression = nmos.id_expression,
+    primary = "vds",
+    x_eng_format=True,
+    y_eng_format=True,
+    y_scale='linear',
+)
+```
+
+![output characteristic](./figures/nmos_output_characteristics.svg)
+
+### Quick Plot
 
 Let's say we want to see how $V_{\mathrm{DS}_{\mathrm{SAT}}}$ (the drain-source
 voltage required to enter saturation) compares with $V_{\mathrm{OV}}$ and
 $V^{\star} = \frac{2}{g_m / I_D}$ in a single plot. We can generate each of
 these plots individually, as we did before, but ask the method to return the
-plot data so that we can combine them in a single plot.
+plot data so that we can combine them in a single plot. Note that you can also
+use `lookup_expression_from_table()` to return the required data if you don't
+want to see the plot.
 
 ```python
 vdsat = nmos.plot_by_expression(
     lengths=[45e-9],
     x_axis = nmos.vgs_expression,
-    y_axis = {"variables": ["vdsat"]},
+    y_axis = nmos.vdsat_expression,
     return_result = True,
 )
 
@@ -272,9 +393,9 @@ vstar = nmos.plot_by_expression(
 
 The result is returned in a tuple in the form `(x_data, y_data)`. We can then
 make any custom plot using `matplotlib`. Nevertheless, there's a method called
-`quick_plot()` that allows you to use the same plot settings. For `x` and `y`,
-there are two possibilities: (1) passing numpy arrays, and (2) passing a list
-of the `x` and `y` values to be plotting, as shown in the example below.
+`quick_plot()` that formats the plot in the same way as the generated plots.
+`quick_plot()` accepts `numpy` arrays, or a list of `x` and `y` values, as
+shown in the example below.
 
 ```python
 nmos.quick_plot(
@@ -285,151 +406,14 @@ nmos.quick_plot(
     y_limit = (0, 0.6),
     x_label = "$V_{\\mathrm{GS}}$",
     y_label = "$V$",
-    save_fig = "/home/medwatt/git/gmid/quick_plot.svg"
 )
 ```
 
 ![qucik plot](./figures/nmos_quick_plot.svg)
-
-## Getting Raw Values
-
-While having plots is a good way to visualize trends, we might also just be
-interested in the raw value.
-
-![gain expression](./figures/nmos_gain_plot.svg)
-
-Looking at the figure above, it's hard to read the exact value on the y-axis
-for a particular value on the x-axis, especially more so when the scale is
-logarithmic.
-
-The snippet below sets `gmid` to a particular value, sweeps the length over a
-range, and calculates the gain. Even though the table does not include all of
-the lengths in the sweep variable, their values are interpolated using the
-available data. The accuracy of the result depends on how far the points are
-from those defined in the table.
-
-```python
-nmos.lookup_by_gmid(
-    length = (180e-9, 1000e-9, 100e-9), # (start, end, step)
-    gmid = 15,
-    expression = {
-        "variables": ["gm", "gds"],
-        "function": lambda x, y: x / y
-    }
-)
-
-array([171.89462638, 244.7708084 , 303.40565751, 331.66760623,
-       351.82406495, 370.72068061, 390.86449014, 403.27318566,
-       413.74810267])
-```
-
-The retuned data can then be used, for example, to make a plot of intrinsic
-gain vs. length.
-
-Naturallu, we can also return a single value.
-
-```python
-nmos.lookup_by_gmid(
-    length=450e-9,
-    gmid=15,
-    expression=nmos.gain_expression
-)
-```
-
-**Note**: The lookup method only works when the relationship between $x$ and
-$y$ is given by a function. If the data in the lookup table does not define a
-function, you can try using the `slice_independent` parameter to extract the
-part where a function between $x$ and $y$ can be defined.
-
-## Lookup Methods
-
-In the preceding sections, only one source was allowed to vary while the other
-two were fixed. This is fine for simple plots.
-
-Suppose we want to see the dependence of $I_{D}/W$ on $g_m / I_{D}$ for
-different values of $V_{DS}$. This is only possible by varying two sources at a
-time. Plots of this nature require the use of the entire lookup table. This can
-be done using the `lookup` method, as shown in the snippet below, where the
-secondary variable is `vds`.
-
-```python
-x = nmos.lookup(
-    length = 180e-9,
-    vsb = 0,
-    vds = (0.2, 1, 0.3), # (start, end, step)
-    vgs = (0.1, 1, 0.01),
-    expression = nmos.gmid_expression,
-    primary = "vgs"
-)
-
-y = nmos.lookup(
-    length = 180e-9,
-    vsb = 0,
-    vds = (0.2, 1, 0.3),
-    vgs = (0.1, 1, 0.01),
-    expression = nmos.current_density_expression,
-    primary = "vgs"
-)
-
-nmos.quick_plot(
-    x.T,
-    y.T,
-    x_limit=(5 ,20),
-    y_limit=(1, 100)
-)
-```
-
-![quick plot](./figures/nmos_quick_plot2.svg)
-
-
-If the above code seems a bit too much, there's a wrapper method just for that
-with added benefits.
-
-```python
-nmos.plot_by_sweep(
-    length=180e-9,
-    vsb = 0,
-    vds = (0.2, 1, 0.3),
-    vgs = (0.1, 1, 0.01),
-    x_axis_expression = nmos.gmid_expression,
-    y_axis_expression = nmos.current_density_expression,
-    primary = "vgs",
-    x_eng_format = True,
-    y_eng_format = True,
-    y_scale = 'log',
-    x_limit = (5, 20),
-    y_limit = (1, 100),
-)
-```
-
-![plot by sweep](./figures/nmos_plot_by_sweep.svg)
-
-The `plot_by_sweep` method is extremely flexible and can be used to create all
-sorts of plots. For example, the snippet below shows how to plot the
-traditional output characteristic plot of a MOSFET.
-
-```python
-nmos.plot_by_sweep(
-    length=180e-9,
-    vsb = 0,
-    vds = (0.0, 1, 0.01),
-    vgs = (0.0, 1.01, 0.2),
-    x_axis_expression = nmos.vds_expression,
-    y_axis_expression = {"variables": ["id"]},
-    primary = "vds",
-    x_eng_format=True,
-    y_eng_format=True,
-    y_scale='linear',
-    x_label = "$V_{DS} (V)$",
-    y_label = "$I_D (A)$",
-)
-```
-
-![output characteristic](./figures/nmos_output_characteristics.svg)
 
 # Acknowledgment
 
 - Parsing the output from `hspice` is done using
   [this](https://github.com/HMC-ACE/hspiceParser) script.
 
-- If you find this tool useful, it would be nice if you could acknowledge it.
+- If you find this tool useful, it would be nice if you cite it.

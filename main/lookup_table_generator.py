@@ -236,20 +236,26 @@ class LookupTableGenerator:
     def __save_to_dictionary(self):
         self.lookup_table["description"] = self.description
         self.lookup_table["parameter_names"] = list(self.parameter_table.keys())
-        self.lookup_table["w"] = self.width
-        self.lookup_table["l"] = self.lengths
+        self.lookup_table["width"] = self.width
+        self.lookup_table["lengths"] = self.lengths
 
         if "nmos" in self.model_names:
             self.lookup_table["nmos"]["vgs"] = range_to_arr(self.vgs)
             self.lookup_table["nmos"]["vds"] = range_to_arr(self.vds)
             self.lookup_table["nmos"]["vsb"] = range_to_arr(self.vsb)
             self.lookup_table["nmos"]["model_name"] = self.model_names["nmos"]
+            self.lookup_table["nmos"]["width"] = self.width
+            self.lookup_table["nmos"]["lengths"] = self.lengths
+            self.lookup_table["nmos"]["parameter_names"] = list(self.parameter_table.keys())
 
         if "pmos" in self.model_names:
             self.lookup_table["pmos"]["vgs"] = -range_to_arr(self.vgs)
             self.lookup_table["pmos"]["vds"] = -range_to_arr(self.vds)
             self.lookup_table["pmos"]["vsb"] = -range_to_arr(self.vsb)
             self.lookup_table["pmos"]["model_name"] = self.model_names["pmos"]
+            self.lookup_table["pmos"]["width"] = self.width
+            self.lookup_table["pmos"]["lengths"] = self.lengths
+            self.lookup_table["pmos"]["parameter_names"] = list(self.parameter_table.keys())
 
     def __print_netlist(self):
         self.r = 1

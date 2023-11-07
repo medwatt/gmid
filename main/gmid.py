@@ -2,7 +2,7 @@
 # Author: Mohamed Watfa
 # URL: https://github.com/medwatt/
 # -----------------------------------------------------------------------------#
-from functools import partial
+
 import numpy as np
 from scipy.interpolate import interpn
 import matplotlib as mpl
@@ -13,7 +13,13 @@ from matplotlib.widgets import Cursor
 # don't warn user about bad divisions
 np.seterr(divide="ignore", invalid="ignore")
 
-# plot settings {{{
+# load the generated lookup table
+def load_lookup_table(path: str):
+    return np.load(path, allow_pickle=True).tolist()
+
+################################################################################
+#                    Override Plot Settings During Runtime                     #
+################################################################################
 FIG_SIZE = (8, 4)
 LINE_WIDTH = 1.5
 GRID_COLOR = "0.9"
@@ -24,19 +30,17 @@ PLOT_SETTINGS = {
     "GRID_COLOR": GRID_COLOR,
 }
 
-
 def set_plot_settings(var_name, new_value):
     global FIG_SIZE, LINE_WIDTH, GRID_COLOR
     if var_name in PLOT_SETTINGS:
         globals()[var_name] = new_value
 
+################################################################################
+#                         Matplotlib Plot Interraction                         #
+################################################################################
 
-# }}}
-
-# matplotlib interraction {{{
 dots = []
 annotations = []
-
 
 def on_canvas_click(event, fig, ax):
     if fig.canvas.toolbar.mode != "":
@@ -64,7 +68,6 @@ def on_canvas_click(event, fig, ax):
         ha="center",
     )
     annotations.append(annotation)
-
     fig.canvas.draw()
 
 
@@ -77,175 +80,160 @@ def clear_annotations_and_dots(fig):
     dots.clear()
     annotations.clear()
 
-
-# }}}
-
-
-def load_lookup_table(path: str):
-    return np.load(path, allow_pickle=True).tolist()
-
+################################################################################
+#                                     GMID                                     #
+################################################################################
 
 class GMID:
-    # init method {{{
-    def __init__(
-        self, lookup_table: dict, *, mos: str, vsb=None, vgs=None, vds=None, slice_independent=None
-    ):
-        # extract from table
-        self.parameters = lookup_table["parameter_names"]
-        self.w = lookup_table["w"]
-        self.l = lookup_table["l"]
-        self.lengths = self.l  # just an alias
+    def __init__( self, *, lookup_table, mos, lengths=None, vsb=None, vgs=None, vds=None, primary=None):
+        """
+        Initialize a GMID object.
+        Two of `lengths, vsb, vgs, vds` must be fixed at any time.
 
+        Args:
+            lookup_table (dict): dictionary of mosfet parameters
+            mos (str): type of mosfet: "nmos" or "pmos"
+            lengths (float, list, ndarray): length(s) of the mosfet
+            vsb (float, tuple): source-body voltage: tuple of the form (start, stop, step)
+            vgs (float, tuple): gate-source voltage: tuple of the form (start, stop, step)
+            vds (float, tuple): drain-source voltage: tuple of the form (start, stop, step)
+            primary (str): name of the primary sweep source
+
+        Example:
+            nmos = GMID(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
+        """
+        # extract data from lookup table
         self.mos = mos
-        self.lookup_table = lookup_table[mos]
-        self.lookup_table["l"] = self.lengths
-        self.lookup_table["w"] = self.w
-        self.slice_independent = slice_independent
+        self.lookup_table = lookup_table
+        self.width = lookup_table[mos]["width"]
+        self.lengths = lookup_table[mos]["lengths"]
+        self.parameters = lookup_table[mos]["parameter_names"]
 
-        self.__parse_source_list(locals())
-        self.vsb, self.vgs, self.vds = self.voltage_sources.values()
+        # extract a 2d table of the parameters
+        self.secondary_variable_idx, self.filtered_variables, self.extracted_table = self.extract_2d_table(lookup_table=self.lookup_table[self.mos], primary=primary, lengths=lengths, vsb=vsb, vgs=vgs, vds=vds)
+        self.lengths, self.vsb, self.vgs, self.vds = self.filtered_variables
 
         # define commonly-used expressions to avoid typing them every time
         self.__common_expressions()
         self.__common_plot_methods()
 
-        # extract parameters by varying the independent source
-        self.__extract_parameters_by_independent_source()
+    def extract_2d_table(self, *, lookup_table, parameters=None, lengths=None, vsb=None, vgs=None, vds=None, primary=None):
+        """
+        Filter the lookup table based
 
-    # }}}
+        Args:
+            lookup_table (dict): dictionary of parameters of one of the mosfets
+            lengths (float, list, ndarray): length(s) of the mosfet
+            vsb (float, tuple): source-body voltage: tuple of the form (start, stop, step)
+            vgs (float, tuple): gate-source voltage: tuple of the form (start, stop, step)
+            vds (float, tuple): drain-source voltage: tuple of the form (start, stop, step)
+            primary (str): name of the primary sweep source
 
-    # private function: parse argument list to determine the independent source{{{
-    def __parse_source_list(self, args: dict):
-        sources = {"vsb": None, "vgs": None, "vds": None}
-        independent_variable = list(sources.keys())
-        fixed_variables = []
+        Returns:
+            secondary_idx: index of the secondary sweep variable in `lengths, vsb, vgs, vds`
+            filter_values: filtered values of `lengths, vsb, vgs, vds`
+            extracted_table: filtered values of parameters
+        """
+        # check that at least two parameters are provided
+        params = [lengths is not None, vsb is not None, vgs is not None, vds is not None]
+        if sum(params) < 2:
+            raise ValueError("Please provide at least two parameters.")
 
-        for k, v in args.items():
-            if k in sources.keys() and v is not None:
-                sources[k] = v
-                fixed_variables.append(k)
-                independent_variable.remove(k)
-
-        self.independent_variable = independent_variable[0]
-        self.independent_source = self.lookup_table[self.independent_variable]
-
-        sources[self.independent_variable] = self.independent_source
-        self.voltage_sources = sources
-        self.fixed_variables = fixed_variables
-
-    # }}}
-
-    # private function: parse argument list of lookup function {{{
-    def __parse_arg_list(self, arg: dict):
-        variables = {"length": None, "vsb": None, "vgs": None, "vds": None}
-        primary = arg["primary"]
-        primary_variable = ""
-        secondary_variable = ""
-        for k, v in arg.items():
-            if k in variables.keys():
-                if isinstance(v, tuple):
-                    if k == primary:
-                        primary_variable = k
-                    else:
-                        secondary_variable = k
-                    variables[k] = np.arange(*v)
-                else:
-                    variables[k] = v
-        if not primary_variable and secondary_variable:
-            primary_variable, secondary_variable = secondary_variable, ""
-        return variables, primary_variable, secondary_variable
-
-    # }}}
-
-    # private function: calculate parameter from expression {{{
-    def __calculate_from_expression(
-        self,
-        expression: dict,
-        table: dict,
-        filter_by_rows: np.ndarray = np.array([]),
-    ):
-        var_list = []
-        for v in expression["variables"]:
-            var = table[v]
-            if filter_by_rows is not None and filter_by_rows.size > 0 and var.size > 1:
-                var_list.append((np.take(var, filter_by_rows, 0)))
+        def get_indices(var, target):
+            data = lookup_table[var]
+            if isinstance(target, tuple): # when `vsb, vgs, vds` is a range
+                start, end = target[:2]
+                indices = np.where((data >= start) & (data <= end))[0]
+                if len(target) == 3:  # if it contains a step
+                    step = int(target[2] / (data[1] - data[0]))
+                    indices = indices[::step]
+            # lengths must be handled separately since they are provided as list of values
+            elif var == "lengths" and isinstance(target, (list, np.ndarray)):
+                # filter by lengths
+                mask = np.isin(self.lookup_table["lengths"], np.array(target))
+                indices = np.nonzero(mask)[0]
+                indices = np.array(indices, dtype=int)
             else:
-                var_list.append(var)
-        if "function" in expression:
-            values = expression["function"](*var_list)
-        else:
-            values = var_list[0]
-        try:
-            return values, expression["label"]
-        except KeyError:
-            return values, ""
+                # by eliminating all float variables, we will be left with one variable
+                # that is not a float, and that will be the secondary variable
+                variables[var] = True
+                index = (np.abs(data - target)).argmin()
+                return np.array([index]), data[index]
 
-    # }}}
+            return indices, data[indices]
 
-    # private function: extract parameters by varying the independent source {{{
-    def __extract_parameters_by_independent_source(self):
-        title_label = []
-        lookup_table = self.lookup_table
-        slice_idx = {
-            "length": slice(None),
-            "vsb": slice(None),
-            "vgs": slice(None),
-            "vds": slice(None),
+        secondary_idx = None
+        variables = {"lengths": False, "vsb": False, "vgs": False, "vds": False}
+        if primary:
+            variables[primary] = True
+
+        indices_and_values = {
+            "lengths": get_indices("lengths", lengths) if lengths is not None else (slice(None), lookup_table["lengths"]),
+            "vsb": get_indices("vsb", vsb) if vsb is not None else (slice(None), lookup_table["vsb"]),
+            "vgs": get_indices("vgs", vgs) if vgs is not None else (slice(None), lookup_table["vgs"]),
+            "vds": get_indices("vds", vds) if vds is not None else (slice(None), lookup_table["vds"]),
         }
 
-        # find closest match to the dependent sources in the lookup table
-        for s in self.fixed_variables:
-            value = self.voltage_sources[s]
-            slice_idx[s] = (np.abs(lookup_table[s] - value)).argmin()
-            title_label.append(f"V_{{ \\mathrm{{ { (s[1:]).upper() } }} }}")
-            title_label.append(value)
+        slice_indices = []
+        filter_values = []
+        for idx, item in enumerate(variables.keys()):
+            slice_indices.append(indices_and_values[item][0])
+            filter_values.append(indices_and_values[item][1])
+        slice_indices = tuple(slice_indices)
 
-        # TODO-SLICING: I'm not that happy with the way I implemented this!
-        if self.slice_independent:
-            var = self.independent_variable
-            start = self.slice_independent[0]
-            end = self.slice_independent[1]
-            slice_idx[var] = (lookup_table[var] >= start) & (lookup_table[var] <= end)
+        def slice_me(a, slices):
+            x = a[slices[0], :, :, :]
+            x = x[:, slices[1], :, :]
+            x = x[:, :, slices[2], :]
+            x = x[:, :, :, slices[3]]
+            return x
 
-        # extract parameters based on the slice
+        # extract the data based on the indices
         extracted_table = {}
-        for p in self.parameters:
-            extracted_table[p] = lookup_table[p][tuple(slice_idx.values())]
+        if not parameters:
+            parameters = lookup_table["parameter_names"]
 
-        # TODO-SLICING
-        if not self.slice_independent:
-            extracted_table[self.independent_variable] = np.tile(
-                lookup_table[self.independent_variable], (len(self.lengths), 1)
-            )
-        else:
-            extracted_table[self.independent_variable] = np.tile(
-                lookup_table[self.independent_variable][slice_idx[var]], (len(self.lengths), 1)
-            )
+        for p in parameters:
+            if p in lookup_table:
+                x = np.squeeze(slice_me(lookup_table[p], slice_indices))
+                if x.shape[0] > x.shape[1]:
+                    extracted_table[p] = x.T
+                else:
+                    extracted_table[p] = x
 
-        extracted_table["w"] = np.array(self.w)
-        extracted_table["l"] = self.l
-        extracted_table[
-            "title"
-        ] = f"{lookup_table['model_name']}, " + "$%s=%.2f$, $%s=%.2f$" % tuple(title_label)
+        extracted_table["width"] = np.array(self.width)
+        extracted_table["lengths"] = filter_values[0]
+        extracted_table["vsb"] = filter_values[1]
+        extracted_table["vgs"] = filter_values[2]
+        extracted_table["vds"] = filter_values[3]
+
+        if primary:
+            secondary_idx = list(variables.values()).index(False)
+
+        return secondary_idx, filter_values, extracted_table
+
+    ################################################################################
+    #                               Plotting Methods                               #
+    ################################################################################
+    def __generate_plot_labels(self):
+        variables_labels = ["lengths", "vsb", "vgs", "vds"]
+        model_name = self.lookup_table[self.mos]["model_name"]
+        title_label = []
+
+        for i, v in enumerate(self.filtered_variables):
+            if not isinstance(v, np.ndarray):
+                label = variables_labels[i]
+                title_label.append(f"V_{{ \\mathrm{{ { (label[1:]).upper() } }} }}")
+                title_label.append(v)
+
+        self.plot_labels = {}
+        self.plot_labels["title"] = f"{model_name}, " + "$%s=%.2f$, $%s=%.2f$" % tuple(title_label)
 
         legend_formatter = EngFormatter(unit="m")
-        extracted_table["label"] = [legend_formatter.format_eng(sw) for sw in self.l]
+        self.plot_labels["lengths"] = [legend_formatter.format_eng(sw) for sw in self.lengths]
 
-        if self.independent_variable == "vds":
-            self.independent_source_expression = self.vds_expression
-        elif self.independent_variable == "vgs":
-            self.independent_source_expression = self.vgs_expression
-        elif self.independent_variable == "vsb":
-            self.independent_source_expression = self.vsb_expression
-
-        self.extracted_table = extracted_table
-        # }}}
-
-    # private function: plot settings {{{
     def __plot_settings(
         self,
-        fig,
-        ax,
         y: np.ndarray,
         x_limit: tuple = (),
         y_limit: tuple = (),
@@ -255,10 +243,30 @@ class GMID:
         y_eng_format: bool = False,
         x_label: str = "",
         y_label: str = "",
-        legend: list = [],
         title: str = "",
         save_fig: str = "",
     ):
+        fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE, tight_layout=True)
+        fig.canvas.mpl_connect(
+            "button_press_event",
+            lambda event: on_canvas_click(event, fig, ax),
+        )
+        fig.canvas.mpl_connect(
+            "key_press_event",
+            lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None,
+        )
+
+        ax.set_title(title)
+        ax.grid(True, which="both", ls="--", color=GRID_COLOR)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+
+        if x_limit:
+            ax.set_xlim(*x_limit)
+
+        if y_limit:
+            ax.set_ylim(*y_limit)
+
         if x_scale:
             ax.set_xscale(x_scale)
 
@@ -269,51 +277,138 @@ class GMID:
             if np.max(y) / np.min(y) > 1000:
                 ax.set_yscale("log")
 
-        formatter0 = EngFormatter(unit="")
+        # set engineering format if specified
         if y_eng_format:
-            ax.yaxis.set_major_formatter(formatter0)
+            ax.yaxis.set_major_formatter(EngFormatter(unit=""))
         if x_eng_format:
-            ax.xaxis.set_major_formatter(formatter0)
+            ax.xaxis.set_major_formatter(EngFormatter(unit=""))
 
-        if x_limit:
-            ax.set_xlim(*x_limit)
+        return fig, ax
 
-        if y_limit:
-            ax.set_ylim(*y_limit)
+    def __plot(self, x, y, fig, ax, legend, save_fig):
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray) and x.ndim == y.ndim:
+            ax.plot(x.T, y.T, lw=LINE_WIDTH, picker=True)
+
+        elif isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+            for x_, y_ in zip(x, y):
+                if x_.ndim == 1 and x_.shape[0] != y_.shape[0]:
+                    ax.plot(x_, y_.T, lw=LINE_WIDTH, picker=True)
+                else:
+                    ax.plot(x_, y_, lw=LINE_WIDTH, picker=True)
+
+        elif x.ndim == 1 and x.shape[0] != y.shape[0]:
+            ax.plot(x, y.T, lw=LINE_WIDTH, picker=True)
 
         if legend:
             ax.legend(legend, loc="center left", bbox_to_anchor=(1, 0.5))
 
-        ax.set_title(title)
-        ax.grid(True, which="both", ls="--", color=GRID_COLOR)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-
         if save_fig:
-            fig.savefig(save_fig)
+            ax.figure.savefig(save_fig, bbox_inches="tight")
 
-    # }}}
-
-    # private function: look for a value using a calculated expression {{{
-    def __lookup_by(
+    def plot_by_expression(
         self,
-        length: float,
-        independent_expression: dict,
-        val: float,
-        dependent_expression: dict,
+        *,
+        x_axis: dict,
+        y_axis: dict,
+        lengths: tuple = (),
+        x_limit: tuple = (),
+        y_limit: tuple = (),
+        x_scale: str = "",
+        y_scale: str = "",
+        x_eng_format: bool = False,
+        y_eng_format: bool = False,
+        save_fig: str = "",
+        return_result: bool = False,
     ):
-        values, _ = self.__calculate_from_expression(independent_expression, self.extracted_table)
-        g = values[(np.abs(self.extracted_table["l"] - length)).argmin()]
-        if dependent_expression:
-            values, _ = self.__calculate_from_expression(dependent_expression, self.extracted_table)
+        extracted_table = self.extracted_table
+
+        # plot labels
+        self.__generate_plot_labels()
+
+        # filter by lengths
+        mask = np.isin(self.lengths, np.array(lengths))
+        indices = np.nonzero(mask)[0]
+        length_indices = np.array(indices, dtype=int)
+
+        if length_indices.size > 0:
+            legend = [self.plot_labels["lengths"][i] for i in length_indices]
         else:
-            values, _ = self.__calculate_from_expression(dependent_expression, self.extracted_table)
-        point = np.array([length, val])
-        return interpn((self.lookup_table["l"], g), values, point)
+            legend = self.plot_labels["lengths"]
 
-    # }}}
+        x, x_label = self.__calculate_from_expression(x_axis, extracted_table, length_indices)
+        y, y_label = self.__calculate_from_expression(y_axis, extracted_table, length_indices)
 
-    # quick plot {{{
+        fig, ax = self.__plot_settings(
+            y,
+            x_limit,
+            y_limit,
+            x_scale,
+            y_scale,
+            x_eng_format,
+            y_eng_format,
+            x_label,
+            y_label,
+            self.plot_labels["title"],
+            save_fig,
+        )
+
+        self.__plot(x, y, fig, ax, legend, save_fig)
+
+        if return_result:
+            return x, y
+
+    def plot_by_sweep(
+        self,
+        *,
+        lengths,
+        vsb,
+        vgs,
+        vds,
+        primary,
+        x_axis_expression,
+        y_axis_expression,
+        title: str = "",
+        x_limit: tuple = (),
+        y_limit: tuple = (),
+        x_scale: str = "",
+        y_scale: str = "",
+        x_eng_format: bool = False,
+        y_eng_format: bool = False,
+        save_fig: str = "",
+        return_result: bool = False,
+    ):
+        secondary_variable_idx, filtered_variables, extracted_table = self.extract_2d_table(
+            lookup_table=self.lookup_table[self.mos], lengths=lengths, vsb=vsb, vgs=vgs, vds=vds, primary=primary
+        )
+
+        x, x_label = self.__calculate_from_expression(x_axis_expression, extracted_table)
+        y, y_label = self.__calculate_from_expression(y_axis_expression, extracted_table)
+
+        fig, ax = self.__plot_settings(
+            y,
+            x_limit,
+            y_limit,
+            x_scale,
+            y_scale,
+            x_eng_format,
+            y_eng_format,
+            x_label,
+            y_label,
+            title,
+            save_fig,
+        )
+
+        if secondary_variable_idx:
+            legend_formatter = EngFormatter(unit="")
+            legend = [legend_formatter.format_eng(sw) for sw in filtered_variables[secondary_variable_idx]]
+        else:
+            legend = None
+
+        self.__plot(x, y, fig, ax, legend, save_fig)
+
+        if return_result:
+            return x, y
+
     def quick_plot(
         self,
         x: np.ndarray | list | tuple,
@@ -334,82 +429,7 @@ class GMID:
         Make quick plots. As a reminder, when `x` and `y` are of size m x n, pass
         them to this function as x.T and y.T
         """
-        fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE, tight_layout=True)
-        fig.canvas.mpl_connect("button_press_event", lambda event: on_canvas_click(event, fig, ax))
-        fig.canvas.mpl_connect(
-            "key_press_event",
-            lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None,
-        )
-
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            ax.plot(x, y, lw=LINE_WIDTH, picker=True)
-
-        if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
-            for x_, y_ in zip(x, y):
-                ax.plot(x_, y_, lw=LINE_WIDTH, picker=True)
-            y = y[0]
-
-        self.__plot_settings(
-            fig,
-            ax,
-            y,
-            x_label=x_label,
-            y_label=y_label,
-            x_limit=x_limit,
-            y_limit=y_limit,
-            y_scale=y_scale,
-            x_scale=x_scale,
-            x_eng_format=x_eng_format,
-            y_eng_format=y_eng_format,
-            legend=legend,
-            save_fig=save_fig,
-        )
-
-    # }}}
-
-    # function: plot by expression {{{
-    def plot_by_expression(
-        self,
-        *,
-        x_axis: dict,
-        y_axis: dict,
-        lengths: tuple = (),
-        x_limit: tuple = (),
-        y_limit: tuple = (),
-        x_scale: str = "",
-        y_scale: str = "",
-        x_eng_format: bool = False,
-        y_eng_format: bool = False,
-        save_fig: str = "",
-        return_result: bool = False,
-    ):
-        extracted_table = self.extracted_table
-
-        # TODO: this does not always work due to floating-point errors
-        lengths_idx = None
-        if lengths:
-            lengths_idx = np.where(np.in1d(extracted_table["l"], np.array(lengths)))[0]
-
-        if lengths_idx is not None and lengths_idx.size > 0:
-            legend = [extracted_table["label"][i] for i in lengths_idx]
-        else:
-            legend = extracted_table["label"]
-
-        x, x_label = self.__calculate_from_expression(x_axis, extracted_table, lengths_idx)
-        y, y_label = self.__calculate_from_expression(y_axis, extracted_table, lengths_idx)
-
-        fig, ax = plt.subplots(1, 1, figsize=(8, 4), tight_layout=True)
-        fig.canvas.mpl_connect("button_press_event", lambda event: on_canvas_click(event, fig, ax))
-        fig.canvas.mpl_connect(
-            "key_press_event",
-            lambda event: clear_annotations_and_dots(fig) if event.key == "d" else None,
-        )
-
-        ax.plot(x.T, y.T, lw=LINE_WIDTH, picker=True)
-
-        self.__plot_settings(
-            fig,
-            ax,
+        fig, ax = self.__plot_settings(
             y,
             x_limit,
             y_limit,
@@ -419,237 +439,48 @@ class GMID:
             y_eng_format,
             x_label,
             y_label,
-            legend,
-            extracted_table["title"],
+            self.plot_labels["title"],
             save_fig,
         )
 
-        plt.show()
-
-        if return_result:
-            return x.T, y.T
+        self.__plot(x, y, fig, ax, legend, save_fig)
 
     # }}}
 
-    # function: plot by sweep {{{
-    def plot_by_sweep(
+    ################################################################################
+    #                             Expression Handling                              #
+    ################################################################################
+    def __calculate_from_expression(
         self,
-        *,
-        length: float | tuple,
-        vsb: float | tuple,
-        vgs: float | tuple,
-        vds: float | tuple,
-        primary: str = "",
-        x_axis_expression: dict | np.ndarray,
-        y_axis_expression: dict | np.ndarray,
-        x_label: str = "",
-        y_label: str = "",
-        x_limit: tuple = (),
-        y_limit: tuple = (),
-        x_scale: str = "",
-        y_scale: str = "",
-        x_eng_format: bool = False,
-        y_eng_format: bool = False,
-        save_fig: str = "",
-        return_result: bool = False,
+        expression: dict,
+        table: dict,
+        filter_by_rows: np.ndarray = np.array([]),
     ):
-        _, primary_variable, secondary_variable = self.__parse_arg_list(locals())
+        if isinstance(expression, dict):
+            var_list = []
+            for v in expression["variables"]:
+                var = table[v]
+                if filter_by_rows.size > 0 and var.ndim > 1:
+                    var_list.append((np.take(var, filter_by_rows, 0)))
+                else:
+                    var_list.append(var)
 
-        if primary_variable not in x_axis_expression["variables"]:
-            x = self.lookup(
-                length=length,
-                vsb=vsb,
-                vgs=vgs,
-                vds=vds,
-                expression=x_axis_expression,
-                primary=primary,
-            )
-        else:
-            x = np.arange(*(locals()[primary_variable]))
-
-        if primary_variable not in y_axis_expression["variables"]:
-            y = self.lookup(
-                length=length,
-                vsb=vsb,
-                vgs=vgs,
-                vds=vds,
-                expression=y_axis_expression,
-                primary=primary,
-            )
-        else:
-            y = np.arange(*(locals()[primary_variable]))
-
-        if x.ndim < y.ndim:
-            x = np.tile(x, y.shape[0]).reshape(y.shape[0], -1)
-        elif y.ndim < x.ndim:
-            y = np.tile(y, x.shape[0]).reshape(x.shape[0], -1)
-
-        if x.ndim > 1:
-            x = x.T
-            y = y.T
-
-        if secondary_variable:
-            legend_formatter = EngFormatter(unit="m")
-            legend = [
-                legend_formatter.format_eng(sw) for sw in np.arange(*locals()[secondary_variable])
-            ]
-        else:
-            legend = []
-
-        if not x_label:
-            try:
-                x_label = x_axis_expression["label"]
-            except KeyError:
-                x_label = ""
-            except TypeError:
-                x_label = x_axis_expression
-
-        if not y_label:
-            try:
-                y_label = y_axis_expression["label"]
-            except KeyError:
-                y_label = ""
-            except TypeError:
-                y_label = y_axis_expression
-
-        self.quick_plot(
-            x,
-            y,
-            x_label=x_label,
-            y_label=y_label,
-            x_limit=x_limit,
-            y_limit=y_limit,
-            x_scale=x_scale,
-            y_scale=y_scale,
-            x_eng_format=x_eng_format,
-            y_eng_format=y_eng_format,
-            legend=legend,
-            save_fig=save_fig,
-        )
-        if return_result:
-            return (x, y)
-
-    # }}}
-
-    # function: lookup a parameter from the table usign values used in defining the table {{{
-    def lookup(
-        self,
-        *,
-        length: float | np.ndarray,
-        vsb: float | np.ndarray,
-        vgs: float | np.ndarray,
-        vds: float | np.ndarray,
-        expression: str | dict,
-        primary: str = "",
-    ):
-        """
-        Return the interpolated value calculated by `expression` for  given
-        `length`, `vsb`, `vgs`, and `vds` variables.
-        Any two of these variables can take a range in the form (start, stop, step).
-        When two variables take a range, the arguement `primary` must be used to
-        indicate which of the two is the primary variable.
-        --------
-        Example:
-        --------
-            nmos.lookup(
-                length = 180e-9,
-                vsb = 0,
-                vgs = (0.1, 1.8, 0.01),
-                vds = (0.4, 1.4+0.5, 0.5),
-                expression = nmos.gmid_expression,
-                primary = "vgs"
-            )
-        """
-        l = self.lengths
-        s = self.lookup_table["vsb"]
-        g = self.lookup_table["vgs"]
-        d = self.lookup_table["vds"]
-        points = (l, s, d, g)
-
-        values, _ = self.__calculate_from_expression(expression, self.lookup_table)
-
-        # parse argument list
-        variables, primary_variable, secondary_variable = self.__parse_arg_list(locals())
-
-        if not (primary_variable or secondary_variable):
-            point = np.array(list(variables.values()))
-            return interpn(points, values, point)
-        else:
-            n = variables[primary_variable].size
-            if secondary_variable:
-                m = variables[secondary_variable].size
-                secondary_range = variables[secondary_variable]
+            if "function" in expression:
+                values = expression["function"](*var_list)
             else:
-                m = 1
-                secondary_range = np.array([1])  # put any value to make the for loop start
-            result = np.zeros(shape=(m, n))
-            for i, s in enumerate(secondary_range):
-                stack_points = []
-                for k, v in variables.items():
-                    if k == primary_variable:
-                        stack_points.append(v)
-                    elif k == secondary_variable:  # this condition will never be meet when m=1
-                        stack_points.append(np.repeat(s, n))
-                    else:
-                        stack_points.append(np.repeat(v, n))
-                point = np.column_stack(tuple(stack_points))
-                result[i] = interpn(points, values, point)
-            if secondary_variable:
-                return result
-            else:
-                return result[0]
+                values = var_list[0]
 
-    # }}}
+            try:
+                return values, expression["label"]
+            except KeyError:
+                return values, ""
+        else:
+            return expression, None
 
-    # function: lookup a parameter by gmid from the extracted table {{{
-    def lookup_by_gmid(self, length: float | tuple, gmid: float, expression: dict):
-        """
-        Return the interpolated value calculated by `expression` for  given
-        `length` and `gmid` variables.
-        `length` can take a range in the form (start, stop, step)
-        --------
-        Example:
-        --------
-            nmos.lookup_by_gmid(
-                length=450e-9,
-                gmid=15,
-                expression=nmos.gain_expression
-            )
-        """
-        return self.lookup_by_expression(
-            length=length,
-            look_by_expression=self.gmid_expression,
-            look_by_value=gmid,
-            look_for_expression=expression,
-        )
-
-    # }}}
-
-    # function: lookup a parameter by an expression from the extracted table {{{
-    def lookup_by_expression(
-        self,
-        length: float | tuple,
-        look_by_expression: dict,
-        look_by_value,
-        look_for_expression: dict,
-    ):
-        if isinstance(length, tuple):
-            length = np.arange(*length)
-            result = np.empty(shape=(length.size,))
-            for i, v in enumerate(length):
-                result[i] = self.__lookup_by(
-                    v, look_by_expression, look_by_value, look_for_expression
-                )
-            return result
-        elif isinstance(length, float):
-            return self.__lookup_by(length, look_by_expression, look_by_value, look_for_expression)
-
-    # }}}
-
-    # private function: define commonly-used expressions {{{
     def __common_expressions(self):
         # create attributes for parameters from the lookup table
         LABEL_TABLE = {
+            "lengths": ["\\mathrm{Length}", "m"],
             "vsb": ["V_{\\mathrm{SB}}", "V"],
             "vgs": ["V_{\\mathrm{GS}}", "V"],
             "vds": ["V_{\\mathrm{DS}}", "V"],
@@ -666,7 +497,7 @@ class GMID:
             "cdd": ["c_{\\mathrm{dd}}", "F"],
         }
         for parameter, (label, unit) in LABEL_TABLE.items():
-            if parameter in self.parameters or parameter in ["vsb", "vgs", "vds"]:
+            if parameter in self.parameters or parameter in ["lengths", "vsb", "vgs", "vds"]:
                 setattr(
                     self,
                     f"{parameter}_expression",
@@ -689,24 +520,26 @@ class GMID:
             "label": "$g_{m}/g_{\\mathrm{ds}}$",
         }
         self.current_density_expression = {
-            "variables": ["id", "w"],
+            "variables": ["id", "width"],
             "function": lambda x, y: x / y,
             "label": "$I_{D}/W (A/m)$",
         }
         self.transist_frequency_expression = {
             "variables": ["gm", "cgg"],
             "function": lambda x, y: x / (2 * np.pi * y),
-            "label": "$f_{T} (Hz)$",
+            "label": "$f_{T} (\\mathrm{Hz})$",
         }
         self.early_voltage_expression = {
             "variables": ["id", "gds"],
             "function": lambda x, y: x / y,
             "label": "$V_{A} (V)$",
         }
+        self.rds_expression = {
+            "variables": ["gds"],
+            "function": lambda x: 1 / x,
+            "label": "$r_{\\mathrm{ds}} (\\Omega)$",
+        }
 
-    # }}}
-
-    # create commonly-used plot functions {{{
     def __common_plot_methods(self):
         PLOT_METHODS = {
             "current_density_plot": [self.gmid_expression, self.current_density_expression],
@@ -749,7 +582,136 @@ class GMID:
         for method_name, (x, y) in PLOT_METHODS.items():
             setattr(GMID, method_name, create_plot_method(self, x_axis=x, y_axis=y))
 
+    ################################################################################
+    #                                Lookup Methods                                #
+    ################################################################################
+    def lookup_by(self, *, independent_expression, independent_value, look_by_expression, look_by_value, look_for_expression):
+        """
+        Given (1) a value of one of the indpendent variables
+              (2) a value of a derived variable
+        Find value of expression using interpolation.
 
-# }}}
+        Args:
+            independent_expression (dict): one of `lengths_expression`, `vsb_expression`, `vgs_expression`, or `vds_expression`
+            independent_value (float): value of independent expression to evaluate at
+            look_by_expression (dict): any derived expression
+            look_by_value (float): value of derived expression to evaluate at
+            look_for_expression (dict): expression of how to calculate the value you're looking for
+
+        Returns:
+            value of expression you're looking for
+
+        Example:
+            x = nmos.lookup_by(
+                independent_expression=nmos.vgs_expression,
+                independent_value=0.65,
+                look_by_expression=nmos.gmid_expression,
+                look_by_value=15,
+                look_for_expression=nmos.lengths_expression,
+            )
+        """
+        look_by_expression_1_values, _ = self.__calculate_from_expression(independent_expression, self.extracted_table)
+        look_by_expression_2_values, _ = self.__calculate_from_expression(look_by_expression, self.extracted_table)
+        look_for_expression_values, _ = self.__calculate_from_expression(look_for_expression, self.extracted_table)
+
+        # make sure that independent_expression is one of the 4 sweep values
+        independent_expressions = [
+            self.lengths_expression,
+            self.vsb_expression,
+            self.vgs_expression,
+            self.vds_expression
+        ]
+        for item_index, item in enumerate(independent_expressions):
+            if independent_expression is item:
+                independent_expression = [self.lengths, self.vsb, self.vgs, self.vds][item_index]
+                break
+        else:
+            raise ValueError("Indepndent expression must be one of the following: lengths, vsb, vgs, vds")
+
+        if look_for_expression is self.lengths_expression:
+            look_for_expression_values = np.tile(self.lengths, (look_by_expression_2_values.shape[1], 1))
+
+        # filter the look_by_value based on the independent value
+        closest_match_index = np.abs(self.filtered_variables[item_index] - independent_value).argmin()
+        if item_index == 0:
+            look_by_expression_2_values = np.sort(look_by_expression_2_values[closest_match_index])
+        else:
+            look_by_expression_2_values = np.sort(look_by_expression_2_values[:, closest_match_index])
+
+        points = (
+            look_by_expression_1_values,
+            look_by_expression_2_values,
+        )
+
+        point_to_interpolate = np.array([independent_value, look_by_value])
+
+        interpolated_value = interpn(
+            points,
+            look_for_expression_values,
+            point_to_interpolate,
+        )
+
+        return interpolated_value[0] if interpolated_value.size > 0 else None
+
+    def lookup_by_gmid(self, *, length, gmid, expression):
+        """
+        Given (1) a value of the mosfet length
+              (2) a value of gmid
+        Find value of expression using interpolation.
+
+        Args:
+            length (float): length of mosfet
+            gmid (float): gmid
+            expression (dict): expression of how to calculate the value you're looking for
+
+        Returns:
+            value of expression
+
+        Example:
+            x = nmos.lookup_by_gmid(
+                length=100e-9,
+                gmid=15,
+                expression=nmos.gain_expression
+            )
+        """
+        return self.lookup_by(
+            independent_expression=self.lengths_expression,
+            independent_value=length,
+            look_by_expression=self.gmid_expression,
+            look_by_value=gmid,
+            look_for_expression=expression,
+        )
+
+    def lookup_expression_from_table(self, *, lengths, vsb, vgs, vds, primary, expression):
+        """
+        Calculate a parameter using the entire table.
+        No interpolation is used.
+
+        Args:
+            lengths (float, list, ndarray): length(s) of the mosfet
+            vsb (float, tuple): source-body voltage, tuple of the form (start, stop, step)
+            vgs (float, tuple): gate-source voltage, tuple of the form (start, stop, step)
+            vds (float, tuple): drain-source voltage, tuple of the form (start, stop, step)
+            primary (str): name of the primary sweep source: "lengths", "vsb", "vgs", or "vds"
+            expression(dict): expression of how to calculate the value you're looking for
+
+        Example:
+            x = nmos.lookup_expression_from_table(
+                lengths=100e-9,
+                vsb=0,
+                vds=(0.0, 1, 0.01),
+                vgs=(0.0, 1.01, 0.2),
+                primary="vds",
+                expression=nmos.current_density_expression,
+            )
+        """
+        parameters = expression["variables"].copy()
+        remove_from_parameters = ["width", "length"]
+        for item in remove_from_parameters:
+            if item in parameters:
+                parameters.remove(item)
+        _, _, extracted_table = self.extract_2d_table(lookup_table=self.lookup_table[self.mos], parameters=parameters, lengths=lengths, vsb=vsb, vgs=vgs, vds=vds, primary=primary)
+        x, _ = self.__calculate_from_expression(expression, extracted_table)
+        return x
 
 # vim:fdm=marker
