@@ -196,7 +196,7 @@ class GMID:
         for p in parameters:
             if p in lookup_table:
                 x = np.squeeze(slice_me(lookup_table[p], slice_indices))
-                if x.shape[0] > x.shape[1]:
+                if x.ndim > 1 and x.shape[0] > x.shape[1]:
                     extracted_table[p] = x.T
                 else:
                     extracted_table[p] = x
@@ -207,7 +207,7 @@ class GMID:
         extracted_table["vgs"] = filter_values[2]
         extracted_table["vds"] = filter_values[3]
 
-        if primary:
+        if primary and secondary_idx:
             secondary_idx = list(variables.values()).index(False)
 
         return secondary_idx, filter_values, extracted_table
@@ -296,8 +296,12 @@ class GMID:
                 else:
                     ax.plot(x_, y_, lw=LINE_WIDTH, picker=True)
 
-        elif x.ndim == 1 and x.shape[0] != y.shape[0]:
-            ax.plot(x, y.T, lw=LINE_WIDTH, picker=True)
+        elif x.ndim == 1:
+            if x.shape[0] != y.shape[0]:
+                ax.plot(x, y.T, lw=LINE_WIDTH, picker=True)
+            else:
+                ax.plot(x, y, lw=LINE_WIDTH, picker=True)
+
 
         if legend:
             ax.legend(legend, loc="center left", bbox_to_anchor=(1, 0.5))

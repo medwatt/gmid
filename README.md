@@ -97,7 +97,7 @@ script within a `jupyter` notebook is highly recommended.
 If the `gmid.py` file is located somewhere not in the same directory as the
 file you're running, add its path so that the interpreter knows about it.
 
-```
+```python
 import sys
 sys.path.insert(0, "path/to/parent/directory/of/gmid.py file")
 ```
@@ -164,7 +164,7 @@ You can pass a list of lengths to plot with the `length` parameter.
 Use `nmos.lengths` to get a list of all the lengths in the lookup table.
 
 ```
-array([4.5e-08, 1.0e-07, 2.0e-07, 4.0e-07, 8.0e-07, 1.6e-06, 3.2e-06,
+array([5.0e-08, 1.0e-07, 2.0e-07, 4.0e-07, 8.0e-07, 1.6e-06, 3.2e-06,
        6.4e-06])
 ```
 
