@@ -201,8 +201,8 @@ shows how.
 
 ```python
 nmos.plot_by_expression(
-    x_axis = nmos.vgs_expression,
-    y_axis = {
+    x_expression = nmos.vgs_expression,
+    y_expression = {
         "variables": ["id", "gds"],
         "function": lambda x, y: x / y,
         "label": "$I_D / g_{ds} (A/S)$"
@@ -233,9 +233,9 @@ parameter, as shown in the example below.
 
 ```python
 nmos.plot_by_expression(
-    x_axis = nmos.vgs_expression,
-    # y_axis = nmos.id_expression, ## same as below
-    y_axis = {
+    x_expression = nmos.vgs_expression,
+    # y_expression = nmos.id_expression, ## same as below
+    y_expression = {
         "variables": ["id"],
         "label": "$I_D (A)$"
         }
@@ -266,48 +266,39 @@ There are two ways to go about this:
 
 ### Lookup Using Interpolation
 
-The snippet below shows how we can lookup some value given the `length` and
-`gmid`. The returned value is calculated using interpolation from the
-available data. The accuracy of the result depends on how far the points
-are from those defined in the table.
+The snippet below shows how we can lookup the `gain` given the `length` and
+`gmid`. The returned value is calculated using interpolation from the available
+data. The accuracy of the result depends on how far the points are from those
+defined in the table.
 
 ```python
-x = nmos.lookup_by_gmid(
-    length=180e-9,
-    gmid=15,
-    expression=nmos.gain_expression
+x = nmos.interpolate(
+    x_expression=nmos.lengths_expression,
+    x_value=100e-9,
+    y_expression=nmos.gmid_expression,
+    y_value=15,
+    z_expression=nmos.gain_expression,
 )
 ```
 
-The above code returns a single point. If you want to make a plot of `gain`
-vs. `length`, just loop through in the usual manner.
+The above code evaluates the `gain` at a single point. Suppose we want to know
+the `gmid` or `length` for which `0.8 <= vdsat < 0.12` and `1e6 <= gds < 4e-6`.
+The snippet below shows how.
 
 ```python
-length_sweep = np.arange(100e-9, 1000e-9, 50e-9)
-gain_sweep = np.zeros_like(length_sweep)
-
-for idx, length in enumerate(length_sweep):
-    gain_sweep[idx] = nmos.lookup_by_gmid(
-        length=length,
-        gmid=15,
-        expression=nmos.gain_expression
-    )
-
-nmos.quick_plot(length_sweep, gain_sweep)
-```
-
-`lookup_by_gmid()` is a wrapper method over the more flexible method
-`lookup_by()`. The example below finds the interpolated length given a
-`vgs` and a `gmid`.
-
-```python
-x = nmos.lookup_by(
-    independent_expression=nmos.vgs_expression,
-    independent_value=0.65,
-    look_by_expression=nmos.gmid_expression,
-    look_by_value=15,
-    look_for_expression=nmos.lengths_expression,
+x = nmos.interpolate(
+    x_expression=nmos.vdsat_expression,
+    x_value=(0.08, 0.12, 0.01),
+    y_expression=nmos.gds_expression,
+    y_value=(1e-6, 4e-6, 1e-6),
+    z_expression=nmos.gmid_expression,
+    # z_expression=nmos.length_expression,
 )
+       # 1e-6
+array([[17.95041245, 17.89435802, 17.47526426], # 0.08
+       [16.87609489, 16.76595338, 16.53927928],
+       [14.77585736, 15.09803158, 14.9483348 ],
+       [14.12540234, 14.05481451, 14.04265227]])
 ```
 
 ### Lookup By Expression
@@ -341,8 +332,8 @@ nmos.plot_by_sweep(
     vsb = 0,
     vds = (0.0, 1, 0.01), # you can also set to `None`
     vgs = (0.0, 1.01, 0.2),
-    x_axis_expression = nmos.vds_expression,
-    y_axis_expression = nmos.id_expression,
+    x_expression_expression = nmos.vds_expression,
+    y_expression_expression = nmos.id_expression,
     primary = "vds",
     x_eng_format=True,
     y_eng_format=True,
@@ -365,15 +356,15 @@ want to see the plot.
 ```python
 vdsat = nmos.plot_by_expression(
     lengths=[45e-9],
-    x_axis = nmos.vgs_expression,
-    y_axis = nmos.vdsat_expression,
+    x_expression = nmos.vgs_expression,
+    y_expression = nmos.vdsat_expression,
     return_result = True,
 )
 
 vov = nmos.plot_by_expression(
     lengths=[45e-9],
-    x_axis = nmos.vgs_expression,
-    y_axis = {
+    x_expression = nmos.vgs_expression,
+    y_expression = {
         "variables": ["vgs", "vth"],
         "function": lambda x, y: x - y,
         },
@@ -382,8 +373,8 @@ vov = nmos.plot_by_expression(
 
 vstar = nmos.plot_by_expression(
     lengths=[45e-9],
-    x_axis = nmos.vgs_expression,
-    y_axis = {
+    x_expression = nmos.vgs_expression,
+    y_expression = {
         "variables": ["gm", "id"],
         "function": lambda x, y: 2 / (x/y),
         },

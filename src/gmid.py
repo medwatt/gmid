@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------#
 
 import numpy as np
-from scipy.interpolate import interpn
+from scipy.interpolate import interpn, griddata
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.ticker import EngFormatter
@@ -13,9 +13,26 @@ from matplotlib.widgets import Cursor
 # don't warn user about bad divisions
 np.seterr(divide="ignore", invalid="ignore")
 
+################################################################################
+#                               Helper Functions                               #
+################################################################################
 # load the generated lookup table
 def load_lookup_table(path: str):
     return np.load(path, allow_pickle=True).tolist()
+
+# tile one array so that it has the same shape as the other
+def tile_arrays(A, B):
+    if A.ndim == 1 and B.ndim == 2:
+        if A.shape[0] == B.shape[0]:
+            return np.tile(A, (B.shape[1], 1)).T, B
+        elif A.shape[0] == B.shape[1]:
+            return np.tile(A, (B.shape[0], 1)), B
+    elif B.ndim == 1 and A.ndim == 2:
+        if B.shape[0] == A.shape[0]:
+            return A, np.tile(B, (A.shape[1], 1)).T
+        elif B.shape[0] == A.shape[1]:
+            return A, np.tile(B, (A.shape[0], 1))
+    return A, B
 
 ################################################################################
 #                    Override Plot Settings During Runtime                     #
@@ -38,7 +55,6 @@ def set_plot_settings(var_name, new_value):
 ################################################################################
 #                         Matplotlib Plot Interraction                         #
 ################################################################################
-
 dots = []
 annotations = []
 
@@ -83,7 +99,6 @@ def clear_annotations_and_dots(fig):
 ################################################################################
 #                                     GMID                                     #
 ################################################################################
-
 class GMID:
     def __init__( self, *, lookup_table, mos, lengths=None, vsb=None, vgs=None, vds=None, primary=None):
         """
@@ -110,7 +125,8 @@ class GMID:
         self.parameters = lookup_table[mos]["parameter_names"]
 
         # extract a 2d table of the parameters
-        self.secondary_variable_idx, self.filtered_variables, self.extracted_table = self.extract_2d_table(lookup_table=self.lookup_table[self.mos], primary=primary, lengths=lengths, vsb=vsb, vgs=vgs, vds=vds)
+        self.secondary_variable_idx, self.filtered_variables, self.extracted_table = \
+        self.extract_2d_table(lookup_table=self.lookup_table[self.mos], primary=primary, lengths=lengths, vsb=vsb, vgs=vgs, vds=vds)
         self.lengths, self.vsb, self.vgs, self.vds = self.filtered_variables
 
         # define commonly-used expressions to avoid typing them every time
@@ -201,11 +217,12 @@ class GMID:
                 else:
                     extracted_table[p] = x
 
+        one_key = next(iter(extracted_table))
         extracted_table["width"] = np.array(self.width)
-        extracted_table["lengths"] = filter_values[0]
-        extracted_table["vsb"] = filter_values[1]
-        extracted_table["vgs"] = filter_values[2]
-        extracted_table["vds"] = filter_values[3]
+        extracted_table["lengths"], _ = tile_arrays(filter_values[0], extracted_table[one_key])
+        extracted_table["vsb"], _ = tile_arrays(filter_values[1], extracted_table[one_key])
+        extracted_table["vgs"], _ = tile_arrays(filter_values[2], extracted_table[one_key])
+        extracted_table["vds"], _ = tile_arrays(filter_values[3], extracted_table[one_key])
 
         if primary and secondary_idx:
             secondary_idx = list(variables.values()).index(False)
@@ -318,8 +335,8 @@ class GMID:
     def plot_by_expression(
         self,
         *,
-        x_axis: dict,
-        y_axis: dict,
+        x_expression: dict,
+        y_expression: dict,
         lengths: tuple = (),
         x_limit: tuple = (),
         y_limit: tuple = (),
@@ -327,6 +344,7 @@ class GMID:
         y_scale: str = "",
         x_eng_format: bool = False,
         y_eng_format: bool = False,
+        title: str = None,
         save_fig: str = "",
         return_result: bool = False,
     ):
@@ -334,6 +352,8 @@ class GMID:
 
         # plot labels
         self.__generate_plot_labels()
+        if title is not None:
+            self.plot_labels["title"] = title
 
         # filter by lengths
         mask = np.isin(self.lengths, np.array(lengths))
@@ -345,8 +365,8 @@ class GMID:
         else:
             legend = self.plot_labels["lengths"]
 
-        x, x_label = self.__calculate_from_expression(x_axis, extracted_table, length_indices)
-        y, y_label = self.__calculate_from_expression(y_axis, extracted_table, length_indices)
+        x, x_label = self.__calculate_from_expression(x_expression, extracted_table, length_indices)
+        y, y_label = self.__calculate_from_expression(y_expression, extracted_table, length_indices)
 
         fig, ax = self.__plot_settings(
             y,
@@ -375,8 +395,8 @@ class GMID:
         vgs,
         vds,
         primary,
-        x_axis_expression,
-        y_axis_expression,
+        x_expression,
+        y_expression,
         title: str = "",
         x_limit: tuple = (),
         y_limit: tuple = (),
@@ -391,8 +411,8 @@ class GMID:
             lookup_table=self.lookup_table[self.mos], lengths=lengths, vsb=vsb, vgs=vgs, vds=vds, primary=primary
         )
 
-        x, x_label = self.__calculate_from_expression(x_axis_expression, extracted_table)
-        y, y_label = self.__calculate_from_expression(y_axis_expression, extracted_table)
+        x, x_label = self.__calculate_from_expression(x_expression, extracted_table)
+        y, y_label = self.__calculate_from_expression(y_expression, extracted_table)
 
         fig, ax = self.__plot_settings(
             y,
@@ -433,7 +453,7 @@ class GMID:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         legend: list = [],
-        title: str = "",
+        title: str = None,
         save_fig: str = "",
     ):
         """
@@ -561,7 +581,7 @@ class GMID:
 
         # This is not ideal since I need to keep track of the signature of `plot_by_expression`.
         # I can use `partial` from `functools` here, but it doesn't hide the bound variables, which I don't like.
-        def create_plot_method(self, x_axis, y_axis):
+        def create_plot_method(self, x_expression, y_expression):
             def plot_method(
                 self,
                 lengths: tuple = (),
@@ -571,12 +591,13 @@ class GMID:
                 y_scale: str = "",
                 x_eng_format: bool = False,
                 y_eng_format: bool = False,
+                title: str = None,
                 save_fig: str = "",
                 return_result: bool = False,
             ):
                 return self.plot_by_expression(
-                    x_axis=x_axis,
-                    y_axis=y_axis,
+                    x_expression=x_expression,
+                    y_expression=y_expression,
                     lengths=lengths,
                     x_scale=x_scale,
                     y_scale=y_scale,
@@ -584,6 +605,7 @@ class GMID:
                     y_limit=y_limit,
                     x_eng_format=x_eng_format,
                     y_eng_format=y_eng_format,
+                    title=title,
                     save_fig=save_fig,
                     return_result=return_result,
                 )
@@ -591,134 +613,65 @@ class GMID:
             return plot_method
 
         for method_name, (x, y) in PLOT_METHODS.items():
-            setattr(GMID, method_name, create_plot_method(self, x_axis=x, y_axis=y))
+            setattr(GMID, method_name, create_plot_method(self, x_expression=x, y_expression=y))
 
     ################################################################################
     #                                Lookup Methods                                #
     ################################################################################
-    def __tile_arrays(self, A, B):
-        if A.ndim == 1 and B.ndim == 2:
-            if A.shape[0] == B.shape[0]:
-                return np.tile(A, (B.shape[1], 1)).T, B
-            elif A.shape[0] == B.shape[1]:
-                return np.tile(A, (B.shape[0], 1)), B
-        elif B.ndim == 1 and A.ndim == 2:
-            if B.shape[0] == A.shape[0]:
-                return A, np.tile(B, (A.shape[1], 1)).T
-            elif B.shape[0] == A.shape[1]:
-                return A, np.tile(B, (A.shape[0], 1))
-        return A, B
-
-    def lookup_by(self, *, independent_expression, independent_value, look_by_expression, look_by_value, look_for_expression):
+    def interpolate(self, *, x_expression, x_value, y_expression, y_value, z_expression):
         """
-        Given (1) a value of one of the indpendent variables
-              (2) a value of a derived variable
-        Find value of expression using interpolation.
+        Given (1) a value from x_expression,
+              (2) a value from y_expression,
+        find value of z_expression using interpolation.
 
         Args:
-            independent_expression (dict): one of `lengths_expression`, `vsb_expression`, `vgs_expression`, or `vds_expression`
-            independent_value (float): value of independent expression to evaluate at
-            look_by_expression (dict): any derived expression
-            look_by_value (float): value of derived expression to evaluate at
-            look_for_expression (dict): expression of how to calculate the value you're looking for
+            x_expression (dict): expression of how to calculate the points on the x-axis
+            x_value (float, dict): value(s) inside the domain of x_expression
+            y_expression (dict): expression of how to calculate the points on the y-axis
+            y_value (float, dict): value(s) inside the domain of y_expression
+            z_expression (dict): expression of how to calculate the value you're looking for
 
         Returns:
             value of expression you're looking for
 
         Example:
-            x = nmos.lookup_by(
-                independent_expression=nmos.vgs_expression,
-                independent_value=0.65,
-                look_by_expression=nmos.gmid_expression,
-                look_by_value=15,
-                look_for_expression=nmos.lengths_expression,
+            x = nmos.interpolate(
+                x_expression=nmos.vgs_expression,
+                x_value=0.65,
+                y_expression=nmos.gmid_expression,
+                y_value=15,
+                z_expression=nmos.lengths_expression,
             )
         """
-        look_by_expression_1_values, _ = self.__calculate_from_expression(independent_expression, self.extracted_table)
-        look_by_expression_2_values, _ = self.__calculate_from_expression(look_by_expression, self.extracted_table)
-        look_for_expression_values, _ = self.__calculate_from_expression(look_for_expression, self.extracted_table)
+        x_array, _ = self.__calculate_from_expression(x_expression, self.extracted_table)
+        y_aray, _ = self.__calculate_from_expression(y_expression, self.extracted_table)
+        z_array, _ = self.__calculate_from_expression(z_expression, self.extracted_table)
 
-        # make sure that independent_expression is one of the 4 sweep values
-        independent_expressions = [
-            self.lengths_expression,
-            self.vsb_expression,
-            self.vgs_expression,
-            self.vds_expression
-        ]
-        for item_index, item in enumerate(independent_expressions):
-            # bad choice of name for independent_expression and independent_expressions
-            if independent_expression is item:
-                independent_expression = [self.lengths, self.vsb, self.vgs, self.vds][item_index]
-                break
+        points = np.column_stack((x_array.ravel(), y_aray.ravel()))
+
+        if isinstance(x_value, (tuple, np.ndarray)) and isinstance(y_value, (int, float)):
+            if isinstance(x_value, tuple):
+                x = np.arange(*x_value)
+            else:
+                x = x_value
+            evaluate_at = np.column_stack((x, np.full(x.shape, y_value)))
+        elif isinstance(y_value, (tuple, np.ndarray)) and isinstance(x_value, (int, float)):
+            if isinstance(y_value, tuple):
+                y = np.arange(*y_value)
+            else:
+                y = y_value
+            evaluate_at = np.column_stack((np.full(y.shape, x_value), y))
+        elif isinstance(x_value, tuple) and isinstance(y_value, tuple):
+            x = np.arange(*x_value)
+            y = np.arange(*y_value)
+            X, Y = np.meshgrid(x, y)
+            evaluate_at = np.dstack((X, Y)).transpose(1, 0, 2)
         else:
-            raise ValueError("Independent expression must be one of the following: lengths, vsb, vgs, vds")
+            evaluate_at = np.array([x_value, y_value])
 
-        # TODO: Urgent
-        if look_for_expression in independent_expressions:
-            item_index_2 = independent_expressions.index(look_for_expression)
-            arr = [self.lengths, self.vsb, self.vgs, self.vds][item_index_2]
-            look_for_expression_values, look_by_expression_2_values = self.__tile_arrays(arr, look_by_expression_2_values)
-        ## END TODO
+        z_value = griddata(points, z_array.ravel(), evaluate_at, method='cubic', rescale=True)
+        return z_value
 
-        closest_match_index = np.abs(self.filtered_variables[item_index] - independent_value).argmin()
-
-        if item_index == 0:
-            look_by_expression_2_values = look_by_expression_2_values[closest_match_index]
-        else:
-            look_by_expression_2_values = look_by_expression_2_values[:, closest_match_index]
-
-        if look_by_expression_1_values.shape[0] != look_for_expression_values.shape[0]:
-            look_for_expression_values = look_for_expression_values.T
-
-        points = (
-            look_by_expression_1_values,
-            look_by_expression_2_values,
-        )
-
-        point_to_interpolate = np.array([independent_value, look_by_value])
-
-
-        try:
-            interpolated_value = interpn(
-                points,
-                look_for_expression_values,
-                point_to_interpolate,
-            )
-
-            return interpolated_value[0] if interpolated_value.size > 0 else None
-
-        except ValueError as e:
-            # "Interpolation failed due to improper grid dimensions, mismatched data shapes, points outside the grid bounds, or invalid data types or values."
-            return f"Failed to interpolate: {str(e)}"
-
-    def lookup_by_gmid(self, *, length, gmid, expression):
-        """
-        Given (1) a value of the mosfet length
-              (2) a value of gmid
-        Find value of expression using interpolation.
-
-        Args:
-            length (float): length of mosfet
-            gmid (float): gmid
-            expression (dict): expression of how to calculate the value you're looking for
-
-        Returns:
-            value of expression
-
-        Example:
-            x = nmos.lookup_by_gmid(
-                length=100e-9,
-                gmid=15,
-                expression=nmos.gain_expression
-            )
-        """
-        return self.lookup_by(
-            independent_expression=self.lengths_expression,
-            independent_value=length,
-            look_by_expression=self.gmid_expression,
-            look_by_value=gmid,
-            look_for_expression=expression,
-        )
 
     def lookup_expression_from_table(self, *, lengths, vsb, vgs, vds, primary, expression):
         """
@@ -751,5 +704,3 @@ class GMID:
         _, _, extracted_table = self.extract_2d_table(lookup_table=self.lookup_table[self.mos], parameters=parameters, lengths=lengths, vsb=vsb, vgs=vgs, vds=vds, primary=primary)
         x, _ = self.__calculate_from_expression(expression, extracted_table)
         return x
-
-# vim:fdm=marker
