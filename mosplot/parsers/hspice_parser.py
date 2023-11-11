@@ -1,5 +1,3 @@
-# copied from: https://github.com/HMC-ACE/hspiceParser
-# on: 01/11/2023
 """
 Author: Raphael Gonzalez (RAffA), Mathew Spencer
 github: RaffaGonzo

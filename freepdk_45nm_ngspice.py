@@ -1,4 +1,4 @@
-from main.lookup_table_generator import LookupTableGenerator
+from mosplot import LookupTableGenerator
 
 obj = LookupTableGenerator(
     description="freepdk 45nm ngspice",

@@ -23,6 +23,14 @@ This tools is written in Python and requires the following:
 -  [`ngspice`](https://ngspice.sourceforge.io/) or `hspice` for generating the
    lookup table.
 
+
+### Installation
+
+- Clone this repository: `git clone https://github.com/medwatt/gmid.git`.
+
+- Inside the directory, invoke: `pip install .`.
+
+
 ## Generating a Lookup Table
 
 Before any plots can be made, a lookup table of all the relevant parameters
@@ -31,7 +39,7 @@ must first be created. This is done by instantiating an object from the
 example is given below.
 
 ```python
-from main.lookup_table_generator import LookupTableGenerator
+from mosplot import LookupTableGenerator
 
 obj = LookupTableGenerator(
     description="freepdk 45nm ngspice",
@@ -94,21 +102,12 @@ script within a `jupyter` notebook is highly recommended.
 
 ### Imports
 
-If the `gmid.py` file is located somewhere not in the same directory as the
-file you're running, add its path so that the interpreter knows about it.
-
-```python
-import sys
-sys.path.insert(0, "path/to/parent/directory/of/gmid.py file")
-```
-
 We begin by making the following imports:
 
 ```python
 import numpy as np
-from gmid import load_lookup_table, GMID
+from mosplot import load_lookup_table, LoadMosfet
 ```
-
 
 The `load_lookup_table` function loads a lookup table such as the one generated
 in the previous section.
@@ -117,7 +116,7 @@ in the previous section.
 lookup_table = load_lookup_table("path/to/lookup-table.npy")
 ```
 
-The `GMID` class contains methods that can be used to generate plots
+The `LoadMosfet` class contains methods that can be used to generate plots
 seamlessly. If you plan to modify the style of the plots or plot things
 differently, you will also have to import `matplotlib`.
 
@@ -134,7 +133,7 @@ some fixed values. Since the data is 4-dimensional, it is necessary to fix two
 of the variables at a time to enable 2-dimensional plotting.
 
 ```python
-nmos = GMID(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
+nmos = LoadMosfet(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
 ```
 
 The above code filters the table at `vsb=0.0` and `vds=0.5` for all `lengths`

@@ -4,17 +4,14 @@
 # -----------------------------------------------------------------------------#
 
 import os
-import sys
 import pickle
 import tempfile
 import subprocess
 
 import numpy as np
 
-sys.path.append('../parsers')
-
-from parsers.ngspice_parser import NgspiceRawFileReader
-from parsers.hspice_parser import import_export
+from ..parsers.ngspice_parser import NgspiceRawFileReader
+from ..parsers.hspice_parser import import_export
 
 ################################################################################
 

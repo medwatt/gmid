@@ -99,10 +99,10 @@ def clear_annotations_and_dots(fig):
 ################################################################################
 #                                     GMID                                     #
 ################################################################################
-class GMID:
+class LoadMosfet:
     def __init__( self, *, lookup_table, mos, lengths=None, vsb=None, vgs=None, vds=None, primary=None):
         """
-        Initialize a GMID object.
+        Initialize a mosfet object.
         Two of `lengths, vsb, vgs, vds` must be fixed at any time.
 
         Args:
@@ -115,7 +115,7 @@ class GMID:
             primary (str): name of the primary sweep source
 
         Example:
-            nmos = GMID(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
+            nmos = LoadMosfet(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
         """
         # extract data from lookup table
         self.mos = mos
@@ -613,7 +613,7 @@ class GMID:
             return plot_method
 
         for method_name, (x, y) in PLOT_METHODS.items():
-            setattr(GMID, method_name, create_plot_method(self, x_expression=x, y_expression=y))
+            setattr(LoadMosfet, method_name, create_plot_method(self, x_expression=x, y_expression=y))
 
     ################################################################################
     #                                Lookup Methods                                #
