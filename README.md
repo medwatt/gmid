@@ -44,6 +44,7 @@ from mosplot import LookupTableGenerator
 obj = LookupTableGenerator(
     description="freepdk 45nm ngspice",
     simulator="ngspice",
+    simulator_path="/usr/bin/ngspice", # optional
     model_paths=[
         "/home/username/gmid/models/NMOS_VTH.lib",
         "/home/username/gmid/models/PMOS_VTH.lib",
@@ -66,8 +67,8 @@ A summary of some of the parameters is given below:
 - The simulator used is specified with the `simulator` parameter. At the
   moment, only `ngspice` and `hspice` are supported. If you're using windows or
   some linux distribution where `ngspice` and `hspice` are named differently,
-  you will have to modify the `NGSPICE_PATH` and `HSPICE_PATH` variables inside
-  the `lookup_table_generator.py` file to point to the binaries on your system.
+  you will have to pass the full path to the binary to the `simulator_path`
+  variable.
 
 - The lookup_table will be generated for a specific transistor model. Provide
   the location of the model files as a list using the `model_paths` parameter.
@@ -281,7 +282,7 @@ x = nmos.interpolate(
 ```
 
 The above code evaluates the `gain` at a single point. Suppose we want to know
-the `gmid` or `length` for which `0.8 <= vdsat < 0.12` and `1e6 <= gds < 4e-6`.
+the `gmid` or `length` for which `0.08 <= vdsat < 0.12` and `1e6 <= gds < 4e-6`.
 The snippet below shows how.
 
 ```python

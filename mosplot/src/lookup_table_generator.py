@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------#
 
 import os
+import shutil
 import pickle
 import tempfile
 import subprocess
@@ -14,9 +15,6 @@ from ..parsers.ngspice_parser import NgspiceRawFileReader
 from ..parsers.hspice_parser import import_export
 
 ################################################################################
-
-NGSPICE_PATH = "ngspice"
-HSPICE_PATH = "hspice"
 
 def range_to_arr(r):
     start, stop, step = r
@@ -31,6 +29,7 @@ class LookupTableGenerator:
         width=10e-6,
         lengths=[500e-9, 600e-9],
         simulator="ngspice",
+        simulator_path=None,
         temp=27,
         model_paths=[],
         model_names={"nmos": "NMOS_VTH", "pmos": "PMOS_VTH"},
@@ -43,6 +42,7 @@ class LookupTableGenerator:
         self.width = width
         self.lengths = np.array(lengths)
         self.simulator = simulator
+        self.simulator_path = simulator_path
         self.temp = temp
         self.model_paths = model_paths
         self.model_names = model_names
@@ -50,8 +50,27 @@ class LookupTableGenerator:
         self.raw_spice = raw_spice
         self.lookup_table = {}
 
-    ################################################################################
+        self.validate_paths()
+        self.setup_simulator()
 
+    ################################################################################
+    def validate_paths(self):
+        path_list = self.model_paths[::]
+        if self.simulator_path is not None:
+            path_list.append(self.simulator_path)
+        for path in path_list:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"The path {path} does not exist.")
+
+    def setup_simulator(self):
+        def check_for_binary(binary_name):
+            if shutil.which(binary_name) is None:
+                raise ValueError(f"The binary '{binary_name}' is not accessible.")
+        if self.simulator_path is None:
+            check_for_binary(self.simulator)
+            self.simulator_path = self.simulator
+
+    ################################################################################
     def __make_tmp_files(self):
         self.input_file_path = tempfile.NamedTemporaryFile(delete=False).name
         self.log_file_path = tempfile.NamedTemporaryFile(delete=False).name
@@ -103,7 +122,7 @@ class LookupTableGenerator:
     def __run_ngspice(self, circuit):
         with open(self.input_file_path, "w") as file:
             file.write("\n".join(circuit))
-        ngspice_command = f"{NGSPICE_PATH} -b -o {self.log_file_path} {self.input_file_path}"
+        ngspice_command = f"{self.simulator_path} -b -o {self.log_file_path} {self.input_file_path}"
         subprocess.run(ngspice_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def __parse_ngspice_output(self):
@@ -159,7 +178,7 @@ class LookupTableGenerator:
     def __run_hspice(self, circuit):
         with open(self.input_file_path, "w") as file:
             file.write("\n".join(circuit))
-        hspice_command = f"{HSPICE_PATH} -i {self.input_file_path} -o {tempfile.gettempdir()}"
+        hspice_command = f"{self.simulator_path} -i {self.input_file_path} -o {tempfile.gettempdir()}"
         subprocess.run(hspice_command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def __parse_hspice_output(self):
