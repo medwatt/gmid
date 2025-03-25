@@ -1,16 +1,11 @@
 # MOSFET Characterization in Python
 
-## Motivation
+## Introduction
 
-This tool has the following goals:
+This is is simple tool for:
 
-1. Provide an easy way of creating plots of MOSFET parameters, such as those
-   used in the gm/ID design methodology.
-
-2. Provide a tool that does not depend on any proprietary software or require
-   licensing fees.
-
-3. Open source so that it can be easily modified/extended by the user.
+1. Generating lookup tables of mosfet parameters.
+2. Making plots of mosfet parameters.
 
 ## Installation
 
@@ -20,9 +15,7 @@ This tools is written in Python and requires the following:
 
 - `Numpy`, `Scipy`, and `Matplotlib` for data analysis and plotting.
 
--  [`ngspice`](https://ngspice.sourceforge.io/) or `hspice` for generating the
-   lookup table.
-
+-  [`ngspice`](https://ngspice.sourceforge.io/) or `hspice` for generating the lookup table.
 
 ### Installation
 
@@ -30,71 +23,71 @@ This tools is written in Python and requires the following:
 
 - Inside the directory, invoke: `pip install .`.
 
-
 ## Generating a Lookup Table
 
 Before any plots can be made, a lookup table of all the relevant parameters
 must first be created. This is done by instantiating an object from the
-`LookupTableGenerator` and then building the table with the `build` method. An
-example is given below.
+`LookupTableGenerator` and then building the table with the `build` method.
+An example is given below.
 
 ```python
-from mosplot import LookupTableGenerator
+from mosplot.lookup_table_generator import LookupTableGenerator
 
 obj = LookupTableGenerator(
-    description="freepdk 45nm ngspice",
-    simulator="ngspice",
-    simulator_path="/usr/bin/ngspice", # optional
-    model_paths=[
+    description="freepdk 45nm",
+
+    # Simulator to use
+    simulator="ngspice", # "ngspice" or "hspice"
+
+    # Provide path to simulator if simulator is not in system path
+    simulator_path="/usr/bin/ngspice",
+
+    # Files that should be included with `.INCLUDE`
+    include_paths=[
         "/home/username/gmid/models/NMOS_VTH.lib",
         "/home/username/gmid/models/PMOS_VTH.lib",
         ],
+
+    # Files that should be included with `.LIB filename libname`
+    # lib_path_names=[
+    #     ("filename", "libname"),
+    #     ...
+    # ]
+
+    # Raw spice to be added if necessary
+    # raw_spice = ["line1", "line2", "..."]
+
+    # Names of models to be simulated, specifying the type ("nmos" or "pmos")
     model_names={
-        "nmos": "NMOS_VTH",
-        "pmos": "PMOS_VTH",
+        "NMOS_VTH": "nmos",
+        "PMOS_VTH": "pmos",
     },
+
+    # Symbols to use for detecting the transistor:
+    # ("mosfet/subcircuit name", "hierarchical_name_of_transistor")
+    mos_spice_symbols = ("m1", "m1")
+
+    # Fixed width to use in all simulations
+    width=10e-6,
+
+    # Voltage sweep parameters
     vsb=(0, 1.0, 0.1),
     vgs=(0, 1.0, 0.01),
     vds=(0, 1.0, 0.01),
-    width=10e-6,
+
+    # Length sweep parameters
     lengths=[50e-9, 100e-9, 200e-9, 400e-9, 800e-9, 1.6e-6, 3.2e-6, 6.4e-6],
 )
-obj.build("/home/username/gmid/lookup_tables/freepdk_45nm_ngspice.npy")
+
+# Run an op simulation if needed to see the outputs returned by the model
+# and see the name of hierarchical name of transistor in case the transistor
+# is nested in a subcircuit
+# obj.op_simulation()
+
+# Build and store the table
+obj.build("./freepdk_45nm")
+
 ```
-
-A summary of some of the parameters is given below:
-
-- The simulator used is specified with the `simulator` parameter. At the
-  moment, only `ngspice` and `hspice` are supported. If you're using windows or
-  some linux distribution where `ngspice` and `hspice` are named differently,
-  you will have to pass the full path to the binary to the `simulator_path`
-  variable.
-
-- The lookup_table will be generated for a specific transistor model. Provide
-  the location of the model files as a list using the `model_paths` parameter.
-  Since it is possible to have more than one model definition inside a file,
-  you need to specify the model name. This is done via the `model_names`
-  parameter, where the keys are always `"nmos"` and `"pmos` and their values
-  are the names of the models to be used.
-
-- If there's a specific need to pass in some custom SPICE commands, these
-  should be done via the `raw_spice` parameter (not shown in the example above).
-
-- To generate a lookup table, the bulk, gate, and drain voltages relative to
-  the source have to be swept over a range of voltages. Specify the range in
-  the form `(start, stop, step)`. The smaller the step size, the bigger is the
-  size of the lookup table.
-
-- The `lengths` can be provided as a list of discrete values or a 1-dimensional
-  `numpy` array.
-
-- Only a single `width` should be provided. The assumption here is that the
-  parameters of the MOSFET scale linearly with the width. Because of this
-  assumption, all parameters that are width-dependent must be de-normalized
-  with respect to the current or width that you're working with.
-
-- The directory where the generated lookup table is saved is passed directly to
-  the `build` method.
 
 ## Using the Tool
 
@@ -107,17 +100,17 @@ We begin by making the following imports:
 
 ```python
 import numpy as np
-from mosplot import load_lookup_table, LoadMosfet
+from mosplot.plot import load_lookup_table, Mosfet
 ```
 
-The `load_lookup_table` function loads a lookup table such as the one generated
-in the previous section.
+The `load_lookup_table` function loads a lookup table such as the one
+generated in the previous section.
 
 ```python
 lookup_table = load_lookup_table("path/to/lookup-table.npy")
 ```
 
-The `LoadMosfet` class contains methods that can be used to generate plots
+The `Mosfet` class contains methods that can be used to generate plots
 seamlessly. If you plan to modify the style of the plots or plot things
 differently, you will also have to import `matplotlib`.
 
@@ -128,19 +121,19 @@ plt.style.use('path/to/style')
 
 ### Making Simple Plots
 
-We start by creating an object called `nmos` that selects the NMOS
-from the lookup table and sets the source-bulk and drain-source voltages to
-some fixed values. Since the data is 4-dimensional, it is necessary to fix two
-of the variables at a time to enable 2-dimensional plotting.
+We start by creating an object called `nmos` that selects the `NMOS_VTH`
+model from the lookup table and sets the source-bulk and drain-source voltages
+to some fixed values. Since the data is 4-dimensional, it is necessary to fix
+two of the variables at a time to enable 2-dimensional plotting.
 
 ```python
-nmos = LoadMosfet(lookup_table=lookup_table, mos="nmos", vsb=0.0, vds=0.5, vgs=(0.3, 1))
+nmos = LoadMosfet(lookup_table=lookup_table, mos="NMOS_VTH", vsb=0.0, vds=0.5, vgs=(0.3, 1))
 ```
 
-The above code filters the table at `vsb=0.0` and `vds=0.5` for all `lengths`
-and for `vgs` values between `(0.3, 1)`. You can also include a step such as
-`(0.3, 1, 0.02)`. If you want all values of `vgs`, either set it to `None` or
-don't include it.
+The above code filters the table at `vsb=0.0` and `vds=0.5` for all
+`lengths` and for `vgs` values between `(0.3, 1)`. You can also include a
+step such as `(0.3, 1, 0.02)`. If you want all values of `vgs`, either set
+it to `None` or don't include it.
 
 Methods are available to create the most commonly-used plots in the gm/ID
 methodology so that you don't have to type them. These are:
@@ -332,8 +325,8 @@ nmos.plot_by_sweep(
     vsb = 0,
     vds = (0.0, 1, 0.01), # you can also set to `None`
     vgs = (0.0, 1.01, 0.2),
-    x_expression_expression = nmos.vds_expression,
-    y_expression_expression = nmos.id_expression,
+    x_expression = nmos.vds_expression,
+    y_expression = nmos.id_expression,
     primary = "vds",
     x_eng_format=True,
     y_eng_format=True,

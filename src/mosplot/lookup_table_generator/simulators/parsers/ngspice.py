@@ -50,7 +50,7 @@ class NgspiceRawFileReader:
                                 "formats": [
                                     np.complex_
                                     if b"complex" in plot[b"flags"]
-                                    else np.float_
+                                    else np.float64
                                 ]
                                 * nvars,
                             }
