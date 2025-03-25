@@ -338,7 +338,7 @@ nmos.plot_by_sweep(
 
 ### Quick Plot
 
-Let's say we want to see how $V_{\mathrm{DS,SAT}}}$ (the drain-source
+Let's say we want to see how $V_{\mathrm{DS,SAT}}$ (the drain-source
 voltage required to enter saturation) compares with $V_{\mathrm{OV}}$ and
 $V^{\star} = \frac{2}{g_m / I_D}$ in a single plot. We can
 generate each of these plots individually, as we did before, but ask the method
