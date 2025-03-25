@@ -11,7 +11,7 @@ This is is simple tool for:
 
 ### Requirements
 
-This tools is written in Python and requires the following:
+This tool is written in Python and requires the following:
 
 - `Numpy`, `Scipy`, and `Matplotlib` for data analysis and plotting.
 
@@ -26,7 +26,7 @@ This tools is written in Python and requires the following:
 ## Generating a Lookup Table
 
 Before any plots can be made, a lookup table of all the relevant parameters
-must first be created. This is done by instantiating an object from the
+must first be created. This is done by instantiating an object from
 `LookupTableGenerator` and then building the table with the `build` method.
 An example is given below.
 
@@ -64,7 +64,7 @@ obj = LookupTableGenerator(
     },
 
     # Symbols to use for detecting the transistor:
-    # ("mosfet/subcircuit name", "hierarchical_name_of_transistor")
+    # ("mosfet/subcircuit name", "hierarchical name of transistor")
     mos_spice_symbols = ("m1", "m1")
 
     # Fixed width to use in all simulations
@@ -80,8 +80,7 @@ obj = LookupTableGenerator(
 )
 
 # Run an op simulation if needed to see the outputs returned by the model
-# and see the name of hierarchical name of transistor in case the transistor
-# is nested in a subcircuit
+# and the hierarchical name of transistor in case the transistor is nested in a subcircuit
 # obj.op_simulation()
 
 # Build and store the table
@@ -152,13 +151,12 @@ nmos.current_density_plot()
 ![current density plot](./figures/nmos_current_density.svg)
 
 When the lookup table includes a lot of lengths, the plot can become crowded.
-You can pass a list of lengths to plot with the `length` parameter.
+You can pass a list of lengths to plot with the `lengths` parameter.
 
 Use `nmos.lengths` to get a list of all the lengths in the lookup table.
 
-```
-array([5.0e-08, 1.0e-07, 2.0e-07, 4.0e-07, 8.0e-07, 1.6e-06, 3.2e-06,
-       6.4e-06])
+```py
+array([5.0e-08, 1.0e-07, 2.0e-07, 4.0e-07, 8.0e-07, 1.6e-06, 3.2e-06, 6.4e-06])
 ```
 
 Pass a filtered list to the `current_density_plot` method.
@@ -249,14 +247,6 @@ for a particular value on the x-axis, especially more so when the scale is
 logarithmic. Also, what if we need to read the value for a length that
 is not defined in our lookup table?
 
-There are two ways to go about this:
-
-- Zoom in and click on the plot. This prints out the `x` and `y`
-  coordinates. Note, in jupyter notebooks, you need to execute `%matplotlib
-  widget` or `%matplotlib qt` to interact with the plot.
-
-- Use a lookup method to get a more precise value.
-
 ### Lookup Using Interpolation
 
 The snippet below shows how we can lookup the `gain` given the `length` and
@@ -344,7 +334,7 @@ $V^{\star} = \frac{2}{g_m / I_D}$ in a single plot. We can
 generate each of these plots individually, as we did before, but ask the method
 to return the plot data so that we can combine them in a single plot. Note that
 you can also use `lookup_expression_from_table()` to return the required data
-if you don't want to see the plot.
+if you don't want to see the individual plots.
 
 ```python
 vdsat = nmos.plot_by_expression(
@@ -376,15 +366,15 @@ vstar = nmos.plot_by_expression(
 ```
 
 The result is returned in a tuple in the form `(x_data, y_data)`. We can then
-make any custom plot using `matplotlib`. Nevertheless, there's a method called
-`quick_plot()` that formats the plot in the same way as the generated plots.
-`quick_plot()` accepts `numpy` arrays, or a list of `x` and `y` values, as
-shown in the example below.
+make any custom plot using `matplotlib`. Nevertheless, there's a method
+called `quick_plot` that formats the plot in the same way as the other
+generated plots. `quick_plot` accepts `numpy` arrays, or a list of `x`
+and `y` values, as shown in the example below.
 
 ```python
 nmos.quick_plot(
-    x = [vdsat[0], vstar[0], vov[0]],
-    y = [vdsat[1], vstar[1], vov[1]],
+    x = [vdsat[0][0], vstar[0][0], vov[0][0]],
+    y = [vdsat[1][0], vstar[1][0], vov[1][0]],
     legend = ["$V_{\\mathrm{DS}_{\\mathrm{SAT}}}$", "$V^{\\star}$", "$V_{\\mathrm{OV}}$"],
     x_limit = (0.1, 1),
     y_limit = (0, 0.6),
