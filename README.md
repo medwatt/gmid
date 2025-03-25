@@ -127,7 +127,7 @@ to some fixed values. Since the data is 4-dimensional, it is necessary to fix
 two of the variables at a time to enable 2-dimensional plotting.
 
 ```python
-nmos = LoadMosfet(lookup_table=lookup_table, mos="NMOS_VTH", vsb=0.0, vds=0.5, vgs=(0.3, 1))
+nmos = Mosfet(lookup_table=lookup_table, mos="NMOS_VTH", vsb=0.0, vds=0.5, vgs=(0.3, 1))
 ```
 
 The above code filters the table at `vsb=0.0` and `vds=0.5` for all
@@ -338,13 +338,13 @@ nmos.plot_by_sweep(
 
 ### Quick Plot
 
-Let's say we want to see how $V_{\mathrm{DS}_{\mathrm{SAT}}}$ (the drain-source
+Let's say we want to see how $V_{\mathrm{DS,SAT}}}$ (the drain-source
 voltage required to enter saturation) compares with $V_{\mathrm{OV}}$ and
-$V^{\star} = \frac{2}{g_m / I_D}$ in a single plot. We can generate each of
-these plots individually, as we did before, but ask the method to return the
-plot data so that we can combine them in a single plot. Note that you can also
-use `lookup_expression_from_table()` to return the required data if you don't
-want to see the plot.
+$V^{\star} = \frac{2}{g_m / I_D}$ in a single plot. We can
+generate each of these plots individually, as we did before, but ask the method
+to return the plot data so that we can combine them in a single plot. Note that
+you can also use `lookup_expression_from_table()` to return the required data
+if you don't want to see the plot.
 
 ```python
 vdsat = nmos.plot_by_expression(
