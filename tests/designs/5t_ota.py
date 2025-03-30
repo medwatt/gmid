@@ -1,7 +1,7 @@
 import numpy as np
-from scipy.optimize import differential_evolution
-from mosplot.plot import Mosfet, load_lookup_table
-from mosplot.optimizer import Optimizer, DesignReport
+from mosplot.plot import Mosfet, Expression, load_lookup_table
+from mosplot.optimizer import Optimizer, DesignReport, Spec, OptimizationParameter
+
 
 # Circuit <<<
 class Circuit:
@@ -13,6 +13,7 @@ class Circuit:
         self.nmos_name = nmos_name
         self.VDD = VDD
         self.CL = CL
+        self.gdsid_expression = Expression(variables=["gds", "id"], function=lambda x, y: x / y)
         self.map_transistors()
 
     def map_transistors(self):
@@ -60,12 +61,13 @@ class Circuit:
             length = params[mapping["length"]]
             gmid = params[mapping["gmid"]]
             current = mapping["current"]
-            idw = transistor.fast_interpolate(
+            idw = transistor.interpolate(
                 x_expression=transistor.lengths_expression,
                 x_value=length,
                 y_expression=transistor.gmid_expression,
                 y_value=gmid,
                 z_expression=transistor.current_density_expression,
+                fast=True,
             )
             width = (current / idw)[0]
             area = width * length
@@ -91,7 +93,7 @@ class Circuit:
         self.transistor_mapping["nmos_load"]["current"] = Ibias / 2.0
         self.transistor_mapping["pmos_tail"]["current"] = Ibias
 
-        cdd_input, vgs_input, vdsat_input, gdsid_input = self.pmos.fast_interpolate(
+        cdd_input, vgs_input, vdsat_input, gdsid_input = self.pmos.interpolate(
             x_expression=self.pmos.lengths_expression,
             x_value=L_input,
             y_expression=self.pmos.gmid_expression,
@@ -100,10 +102,11 @@ class Circuit:
                 self.pmos.cdd_expression,
                 self.pmos.vgs_expression,
                 self.pmos.vdsat_expression,
-                {"variables": ["gds", "id"], "function": lambda x, y: x / y},
-            ]
+                self.gdsid_expression,
+            ],
+            fast=True,
         )
-        cdd_load, vgs_load, gdsid_load = self.nmos.fast_interpolate(
+        cdd_load, vgs_load, gdsid_load = self.nmos.interpolate(
             x_expression=self.nmos.lengths_expression,
             x_value=L_load,
             y_expression=self.nmos.gmid_expression,
@@ -111,18 +114,20 @@ class Circuit:
             z_expression=[
                 self.nmos.cdd_expression,
                 self.nmos.vgs_expression,
-                {"variables": ["gds", "id"], "function": lambda x, y: x / y},
-            ]
+                self.gdsid_expression,
+            ],
+            fast=True,
         )
-        vdsat_tail, gdsid_tail = self.pmos.fast_interpolate(
+        vdsat_tail, gdsid_tail = self.pmos.interpolate(
             x_expression=self.pmos.lengths_expression,
             x_value=L_tail,
             y_expression=self.pmos.gmid_expression,
             y_value=gmid_tail,
             z_expression=[
                 self.pmos.vdsat_expression,
-                {"variables": ["gds", "id"], "function": lambda x, y: x / y},
-            ]
+                self.gdsid_expression,
+            ],
+            fast=True,
         )
 
         current_input = Ibias / 2.0
@@ -149,6 +154,7 @@ class Circuit:
 # >>>
 
 if __name__ == "__main__":
+    # Define circuit constants and lookup table location.
     lookup_table = "/home/medwatt/git/gmid/tests/lookup_table_generator/tsmc65/tsmc_65nm.npy"
     VDD = 1.2
     CL = 5e-12
@@ -156,51 +162,60 @@ if __name__ == "__main__":
     nmos_range = (0.1, 1.2)
     pmos_name = "pch_lvt"
     nmos_name = "nch_lvt"
+
+    # Create the circuit instance.
     circuit = Circuit(lookup_table, pmos_range, nmos_range, pmos_name, nmos_name, VDD, CL)
 
-    var_names = ["L_input", "gmid_input", "L_load", "gmid_load", "L_tail", "gmid_tail", "Ibias"]
-    bounds = [
-        (100e-9, 2e-6),
-        (7, 16),
-        (100e-9, 2e-6),
-        (7, 15),
-        (100e-9, 2e-6),
-        (7, 15),
-        (1e-6, 40e-6)
+    # Define optimization parameters as a list of OptimizationParameter objects.
+    parameters = [
+        OptimizationParameter("L_input", (100e-9, 2e-6)),
+        OptimizationParameter("gmid_input", (7, 16)),
+        OptimizationParameter("L_load", (100e-9, 2e-6)),
+        OptimizationParameter("gmid_load", (7, 15)),
+        OptimizationParameter("L_tail", (100e-9, 2e-6)),
+        OptimizationParameter("gmid_tail", (7, 15)),
+        OptimizationParameter("Ibias", (1e-6, 40e-6))
     ]
 
+    # Define target specifications using Spec objects.
     target_specs = {
-        "GBW":      {"target": 5e6,   "mode": "max", "weight": 5},
-        "Gain":     {"target": 30,    "mode": "max", "weight": 2},
-        "Ibias":    {"target": 20e-6, "mode": "min", "weight": 1},
-        "ICMR_LOW": {"target": 0.1,   "mode": "min", "weight": 1},
-        "ICMR_HIGH":{"target": 0.7,   "mode": "max", "weight": 5},
-        "CMRR":     {"target": 2000,  "mode": "max", "weight": 3},
-        "Area":     {"target": 15e-12, "mode": "min", "weight": 1},
+        "GBW":       Spec(5e6, "max", 5),
+        "Gain":      Spec(30, "max", 2),
+        "Ibias":     Spec(20e-6, "min", 1),
+        "ICMR_LOW":  Spec(0.1, "min", 1),
+        "ICMR_HIGH": Spec(0.7, "max", 5),
+        "CMRR":      Spec(2000, "max", 3),
+        "Area":      Spec(15e-12, "min", 1)
     }
 
-    optimizer = Optimizer(circuit, var_names, bounds, target_specs)
+    # Instantiate and run the optimizer.
+    optimizer = Optimizer(circuit, parameters, target_specs)
     result = optimizer.optimize(maxiter=5)
 
+    # Generate and print the design report.
     report = DesignReport(circuit, optimizer)
     print("\nDesign Report:")
     print(report.report())
 
-    vgs_input = circuit.pmos.fast_interpolate(
+    # Get optimal parameters for interpolation.
+    opt_params = optimizer.get_opt_params()
+
+    # Interpolate VGS for the input device and tail.
+    vgs_input = circuit.pmos.interpolate(
         x_expression=circuit.pmos.lengths_expression,
-        x_value=optimizer.get_opt_params()["L_input"],
+        x_value=opt_params["L_input"],
         y_expression=circuit.pmos.gmid_expression,
-        y_value=optimizer.get_opt_params()["gmid_input"],
+        y_value=opt_params["gmid_input"],
         z_expression=circuit.pmos.vgs_expression
     )
-    vgs_tail = circuit.pmos.fast_interpolate(
+    vgs_tail = circuit.pmos.interpolate(
         x_expression=circuit.pmos.lengths_expression,
-        x_value=optimizer.get_opt_params()["L_tail"],
+        x_value=opt_params["L_tail"],
         y_expression=circuit.pmos.gmid_expression,
-        y_value=optimizer.get_opt_params()["gmid_tail"],
+        y_value=opt_params["gmid_tail"],
         z_expression=circuit.pmos.vgs_expression
     )
+
     print("")
     print(f"Input Pair VSG = {-vgs_input[0]}")
-    print(f"Tail VG = {VDD+vgs_tail[0]}")
-
+    print(f"Tail VG = {VDD + vgs_tail[0]}")
