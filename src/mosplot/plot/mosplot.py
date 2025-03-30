@@ -3,10 +3,12 @@ import numpy as np
 from scipy.interpolate import griddata
 from .helpers import extract_2d_table
 from .plotter import Plotter
+from scipy.spatial import cKDTree
 # >>>
 
 
 class Mosfet:
+
     # init <<<
     def __init__(
         self,
@@ -368,44 +370,30 @@ class Mosfet:
         x_value,
         y_expression: dict,
         y_value,
-        z_expression: dict,
+        z_expression,  # can be a dict or list of dicts
     ):
         """
-        Given (1) a value from x_expression,
-              (2) a value from y_expression,
-        find value of z_expression using interpolation.
+        Interpolate using the given expressions. If z_expression is a list,
+        returns a list of results.
 
         Args:
-            x_expression (dict): expression of how to calculate the points on the x-axis
-            x_value (float, dict): value(s) inside the domain of x_expression
-            y_expression (dict): expression of how to calculate the points on the y-axis
-            y_value (float, dict): value(s) inside the domain of y_expression
-            z_expression (dict): expression of how to calculate the value you're looking for
+            x_expression (dict): Expression for x-axis points.
+            x_value (float, tuple, or np.ndarray): Value(s) within x_expression domain.
+            y_expression (dict): Expression for y-axis points.
+            y_value (float, tuple, or np.ndarray): Value(s) within y_expression domain.
+            z_expression (dict or list of dict): Expression(s) for the output value.
 
         Returns:
-            value of expression you're looking for
-
-        Example:
-            x = nmos.interpolate(
-                x_expression=nmos.vgs_expression,
-                x_value=0.65,
-                y_expression=nmos.gmid_expression,
-                y_value=15,
-                z_expression=nmos.lengths_expression,
-            )
+            Interpolated value or list of interpolated values.
         """
         x_array, _ = self._calculate_from_expression(x_expression, self.extracted_table)
         y_array, _ = self._calculate_from_expression(y_expression, self.extracted_table)
-        z_array, _ = self._calculate_from_expression(z_expression, self.extracted_table)
         points = np.column_stack((x_array.ravel(), y_array.ravel()))
-        if isinstance(x_value, (tuple, np.ndarray)) and isinstance(
-            y_value, (int, float)
-        ):
+
+        if isinstance(x_value, (tuple, np.ndarray)) and isinstance(y_value, (int, float)):
             x_vals = np.arange(*x_value) if isinstance(x_value, tuple) else x_value
             eval_points = np.column_stack((x_vals, np.full(np.shape(x_vals), y_value)))
-        elif isinstance(y_value, (tuple, np.ndarray)) and isinstance(
-            x_value, (int, float)
-        ):
+        elif isinstance(y_value, (tuple, np.ndarray)) and isinstance(x_value, (int, float)):
             y_vals = np.arange(*y_value) if isinstance(y_value, tuple) else y_value
             eval_points = np.column_stack((np.full(np.shape(y_vals), x_value), y_vals))
         elif isinstance(x_value, tuple) and isinstance(y_value, tuple):
@@ -415,10 +403,123 @@ class Mosfet:
             eval_points = np.dstack((X, Y)).transpose(1, 0, 2)
         else:
             eval_points = np.array([x_value, y_value])
-        return griddata(
-            points, z_array.ravel(), eval_points, method="cubic", rescale=True
-        )
 
+        single_input = False
+        if not isinstance(z_expression, list):
+            z_expressions = [z_expression]
+            single_input = True
+        else:
+            z_expressions = z_expression
+
+        results = []
+        for expr in z_expressions:
+            z_array, _ = self._calculate_from_expression(expr, self.extracted_table)
+            res = griddata(points, z_array.ravel(), eval_points, method="cubic", rescale=True)
+            results.append(res)
+        return results[0] if single_input else results
+    # >>>
+
+    # fast interpolate <<<
+    def fast_interpolate(
+        self,
+        x_expression: dict,
+        x_value,
+        y_expression: dict,
+        y_value,
+        z_expression,
+    ):
+        """
+        Fast interpolation using cKDTree and inverse distance weighting.
+
+        Args:
+            x_expression (dict): Expression for x-axis points.
+            x_value (float, tuple, or np.ndarray): Value(s) within x_expression domain.
+            y_expression (dict): Expression for y-axis points.
+            y_value (float, tuple, or np.ndarray): Value(s) within y_expression domain.
+            z_expression (dict or list of dict): Expression(s) for the output value.
+
+        Returns:
+            Interpolated value or list of interpolated values.
+        """
+        # Compute original arrays and build points
+        x_array, _ = self._calculate_from_expression(x_expression, self.extracted_table)
+        y_array, _ = self._calculate_from_expression(y_expression, self.extracted_table)
+        points = np.column_stack((x_array.ravel(), y_array.ravel()))
+
+        # Scale coordinates
+        x_min, x_max = x_array.min(), x_array.max()
+        y_min, y_max = y_array.min(), y_array.max()
+        scaled_points = np.column_stack(((points[:, 0] - x_min) / (x_max - x_min),
+                                         (points[:, 1] - y_min) / (y_max - y_min)))
+        tree = cKDTree(scaled_points)
+
+        # Build evaluation points
+        if isinstance(x_value, (tuple, np.ndarray)) and isinstance(y_value, (int, float)):
+            x_vals = np.arange(*x_value) if isinstance(x_value, tuple) else x_value
+            eval_points = np.column_stack((x_vals, np.full(np.shape(x_vals), y_value)))
+        elif isinstance(y_value, (tuple, np.ndarray)) and isinstance(x_value, (int, float)):
+            y_vals = np.arange(*y_value) if isinstance(y_value, tuple) else y_value
+            eval_points = np.column_stack((np.full(np.shape(y_vals), x_value), y_vals))
+        elif isinstance(x_value, tuple) and isinstance(y_value, tuple):
+            x_vals = np.arange(*x_value)
+            y_vals = np.arange(*y_value)
+            X, Y = np.meshgrid(x_vals, y_vals)
+            eval_points = np.dstack((X, Y)).transpose(1, 0, 2)
+        else:
+            eval_points = np.array([x_value, y_value])
+
+        # Prepare evaluation points for tree query
+        if eval_points.ndim == 1:
+            eval_points = eval_points.reshape(1, 2)
+            out_shape = None
+        elif eval_points.ndim == 2:
+            out_shape = None
+        elif eval_points.ndim > 2 and eval_points.shape[-1] == 2:
+            out_shape = eval_points.shape[:-1]
+            eval_points = eval_points.reshape(-1, 2)
+        else:
+            out_shape = None
+
+        # Scale evaluation points
+        scaled_eval_points = np.column_stack(((eval_points[:, 0] - x_min) / (x_max - x_min),
+                                              (eval_points[:, 1] - y_min) / (y_max - y_min)))
+
+        # Prepare z expressions
+        single_input = False
+        if not isinstance(z_expression, list):
+            z_expressions = [z_expression]
+            single_input = True
+        else:
+            z_expressions = z_expression
+
+        results = []
+        k = min(8, len(scaled_points))  # Number of neighbors
+        eps = 1e-12
+
+        for expr in z_expressions:
+            z_array, _ = self._calculate_from_expression(expr, self.extracted_table)
+            z_flat = z_array.ravel()
+            dist, idx = tree.query(scaled_eval_points, k=k)
+
+            # Ensure 2D arrays when k == 1
+            if k == 1:
+                dist = dist[:, None]
+                idx = idx[:, None]
+
+            res = np.empty(len(scaled_eval_points))
+            zero_mask = dist[:, 0] < eps
+            res[zero_mask] = z_flat[idx[zero_mask, 0]]
+            if np.any(~zero_mask):
+                d = dist[~zero_mask]
+                i = idx[~zero_mask]
+                weights = 1 / (d ** 2)
+                res[~zero_mask] = np.sum(weights * z_flat[i], axis=1) / np.sum(weights, axis=1)
+
+            if out_shape is not None:
+                res = res.reshape(out_shape)
+            results.append(res)
+
+        return results[0] if single_input else results
     # >>>
 
     # lookup expression from table <<<
