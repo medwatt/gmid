@@ -1,10 +1,13 @@
+# imports <<<
+from typing import List, Tuple, Union
 import numpy as np
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
-from typing import Union, Tuple, List
-from .helpers import evaluate_expression
 from .expressions import Expression
+from .util import evaluate_expression
+# >>>
 
+# grid interpolate <<<
 class GridInterpolator:
     """
     Interpolator using griddata with cubic interpolation.
@@ -75,7 +78,9 @@ class GridInterpolator:
             return np.dstack((X, Y)).reshape(-1, 2)
         else:
             return np.array([[x_value, y_value]])
+# >>>
 
+# kdtree interpolate <<<
 class KDTreeInterpolator:
     """
     Interpolator using a KDTree with inverse distance weighting.
@@ -170,4 +175,4 @@ class KDTreeInterpolator:
             return np.dstack((X, Y)).reshape(-1, 2)
         else:
             return np.array([[x_value, y_value]])
-
+# >>>

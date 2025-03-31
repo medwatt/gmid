@@ -62,7 +62,7 @@ class Circuit:
             gmid = params[mapping["gmid"]]
             current = mapping["current"]
             idw = transistor.interpolate(
-                x_expression=transistor.lengths_expression,
+                x_expression=transistor.length_expression,
                 x_value=length,
                 y_expression=transistor.gmid_expression,
                 y_value=gmid,
@@ -94,7 +94,7 @@ class Circuit:
         self.transistor_mapping["pmos_tail"]["current"] = Ibias
 
         cdd_input, vgs_input, vdsat_input, gdsid_input = self.pmos.interpolate(
-            x_expression=self.pmos.lengths_expression,
+            x_expression=self.pmos.length_expression,
             x_value=L_input,
             y_expression=self.pmos.gmid_expression,
             y_value=gmid_input,
@@ -107,7 +107,7 @@ class Circuit:
             fast=True,
         )
         cdd_load, vgs_load, gdsid_load = self.nmos.interpolate(
-            x_expression=self.nmos.lengths_expression,
+            x_expression=self.nmos.length_expression,
             x_value=L_load,
             y_expression=self.nmos.gmid_expression,
             y_value=gmid_load,
@@ -119,7 +119,7 @@ class Circuit:
             fast=True,
         )
         vdsat_tail, gdsid_tail = self.pmos.interpolate(
-            x_expression=self.pmos.lengths_expression,
+            x_expression=self.pmos.length_expression,
             x_value=L_tail,
             y_expression=self.pmos.gmid_expression,
             y_value=gmid_tail,
@@ -202,14 +202,14 @@ if __name__ == "__main__":
 
     # Interpolate VGS for the input device and tail.
     vgs_input = circuit.pmos.interpolate(
-        x_expression=circuit.pmos.lengths_expression,
+        x_expression=circuit.pmos.length_expression,
         x_value=opt_params["L_input"],
         y_expression=circuit.pmos.gmid_expression,
         y_value=opt_params["gmid_input"],
         z_expression=circuit.pmos.vgs_expression
     )
     vgs_tail = circuit.pmos.interpolate(
-        x_expression=circuit.pmos.lengths_expression,
+        x_expression=circuit.pmos.length_expression,
         x_value=opt_params["L_tail"],
         y_expression=circuit.pmos.gmid_expression,
         y_value=opt_params["gmid_tail"],

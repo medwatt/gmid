@@ -15,7 +15,7 @@ obj = LookupTableGenerator(
     vgs=(0, 1.0, 0.01),
     vds=(0, 1.0, 0.01),
     width=10e-6,
-    lengths=[45e-9, 100e-9],
+    length=[45e-9, 100e-9],
 )
 
 # obj.op_simulation()

@@ -3,13 +3,13 @@ import numpy as np
 # >>>
 
 class MosfetSimulation:
-    def __init__(self, simulator, netlist_gen, vgs, vds, vsb, lengths, n_vgs, n_vds, n_vsb, model_names):
+    def __init__(self, simulator, netlist_gen, vgs, vds, vsb, length, n_vgs, n_vds, n_vsb, model_names):
         self.simulator = simulator
         self.netlist_gen = netlist_gen
         self.vgs = vgs
         self.vds = vds
         self.vsb = vsb
-        self.lengths = lengths
+        self.length = length
         self.n_vgs = n_vgs
         self.n_vds = n_vds
         self.n_vsb = n_vsb
@@ -17,7 +17,7 @@ class MosfetSimulation:
         self.lookup_table = {}
         for mosfet_model in self.model_names.keys():
             self.lookup_table[mosfet_model] = {
-                p: np.zeros((len(self.lengths), n_vsb, n_vgs, n_vds))
+                p: np.zeros((len(self.length), n_vsb, n_vgs, n_vds), dtype=np.float32)
                 for p in simulator.parameters_to_save
             }
 
@@ -27,7 +27,7 @@ class MosfetSimulation:
 
     def get_single_netlist(self, sim_func):
         transistor_name = next(iter(self.model_names.keys()))
-        length = next(iter(self.lengths))
+        length = next(iter(self.length))
         vsb_val = next(iter(self.linspace(*self.vsb)))
         netlist = self.netlist_gen.generate_netlist(transistor_name, length, vsb_val)
         sim_setup = sim_func(self.vgs, self.vds)
@@ -53,7 +53,7 @@ class MosfetSimulation:
 
             print(f"Simulating {transistor_name}")
 
-            for l_idx, length in enumerate(self.lengths):
+            for l_idx, length in enumerate(self.length):
 
                 print("Length:", length)
 

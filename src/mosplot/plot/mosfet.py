@@ -1,76 +1,91 @@
+# imports <<<
+from typing import List, Optional, Tuple, Union
+
 import numpy as np
-from typing import Tuple, Optional, Union, List
-from .helpers import extract_2d_table, evaluate_expression
-from .plot import Plotter
+
 from .expressions import Expression
+from .util import evaluate_expression, extract_2d_table
 from .interpolation import GridInterpolator, KDTreeInterpolator
+from .plot import Plotter
+# >>>
+
 
 class Mosfet:
     """
-    Initialize a mos object.
-    Two of `lengths, vsb, vgs, vds` must be fixed at any time.
+    Initialize a MOSFET model object.
+
+    When creating a MOSFET object, exactly two of the parameters `length`, `vsb`, `vgs`, and `vds`
+    must be provided as fixed values. The remaining parameters can be specified as a range (or set to
+    `None` to use the full range from the lookup table). Any parameter not fixed is treated as the
+    secondary sweep variable.
+
+    If two parameters are given as ranges, you must indicate which one is the primary sweep variable
+    using the `primary` argument.
 
     Args:
-        lookup_table: dictionary of mosfet parameters
-        mos: model name of the mos transistor
-        lengths: length(s) of the mosfet
-        vsb: source-body voltage
-        vgs: gate-source voltage
-        vds: drain-source voltage
-        primary: name of the primary sweep source
+        lookup_table: dictionary containing MOSFET parameter data.
+        mos: model name of the MOSFET.
+        length: mosfet length.
+        vsb: source-body voltage.
+        vgs: gate-source voltage.
+        vds: drain-source voltage.
+        primary: name of the primary sweep.
 
-    Example:
+    Examples:
+        Fixed vds; sweep vgs (primary) and length (secondary)
         nmos = Mosfet(lookup_table=lookup_table, mos="nch_lvt", vsb=0.0, vds=0.4, vgs=(0.01, 1.19))
-        pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vsb=0.0, vds=-0.4, vgs=(-1.19, -0.01))
+        pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vsb=0.0, vgs=-0.4, vds=(-1.19, -0.01))
     """
+    # init <<<
     def __init__(
         self,
+        *,
         lookup_table: dict,
         mos: str,
-        lengths: Optional[Union[float, List[float], np.ndarray]] = None,
-        vsb: Optional[Union[float, Tuple[float, float, float]]] = None,
-        vgs: Optional[Union[float, Tuple[float, float, float]]] = None,
-        vds: Optional[Union[float, Tuple[float, float, float]]] = None,
+        length: Optional[Union[float, List[float], np.ndarray]] = None,
+        vsb: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+        vgs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+        vds: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         primary: Optional[str] = None
     ) -> None:
         self.mos = mos
         self.lookup_table = lookup_table[mos]
         self.width = self.lookup_table["width"]
-        self.lengths_all = self.lookup_table["lengths"]
+        self.length_all = self.lookup_table["length"]
         self.parameters = self.lookup_table["parameter_names"]
 
-        self.secondary_idx, self.filtered_variables, self.extracted_table = extract_2d_table(
+        self.secondary_var, self.filtered_variables, self.extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
             width=self.width,
-            lengths=lengths,
+            length=length,
             vsb=vsb,
             vgs=vgs,
             vds=vds,
             primary=primary,
         )
-        self.lengths = self.filtered_variables[0]
-        self.vsb = self.filtered_variables[1]
-        self.vgs = self.filtered_variables[2]
-        self.vds = self.filtered_variables[3]
+        self.length = self.filtered_variables["length"]
+        self.vsb = self.filtered_variables["vsb"]
+        self.vgs = self.filtered_variables["vgs"]
+        self.vds = self.filtered_variables["vds"]
 
         self.plotter = Plotter()
 
         # Initialize basic expressions.
-        self.lengths_expression = Expression(variables=["lengths"], label ="$\\mathrm{Length}\\ (m)$")
-        self.vsb_expression     = Expression(variables=["vsb"],     label ="$V_{\\mathrm{SB}}\\ (V)$")
-        self.vgs_expression     = Expression(variables=["vgs"],     label ="$V_{\\mathrm{GS}}\\ (V)$")
-        self.vds_expression     = Expression(variables=["vds"],     label ="$V_{\\mathrm{DS}}\\ (V)$")
-        self.id_expression      = Expression(variables=["id"],      label ="$I_{D}\\ (A)$")
-        self.vth_expression     = Expression(variables=["vth"],     label ="$V_{\\mathrm{TH}}\\ (V)$")
-        self.vdsat_expression   = Expression(variables=["vdsat"],   label ="$V_{\\mathrm{DS_{\\mathrm{SAT}}}}\\ (V)$")
-        self.gm_expression      = Expression(variables=["gm"],      label ="$g_{m}\\ (S)$")
-        self.gmbs_expression    = Expression(variables=["gmbs"],    label ="$g_{\\mathrm{mbs}}\\ (S)$")
-        self.gds_expression     = Expression(variables=["gds"],     label ="$g_{\\mathrm{ds}}\\ (S)$")
-        self.cgg_expression     = Expression(variables=["cgg"],     label ="$c_{\\mathrm{gg}}\\ (F)$")
-        self.cgs_expression     = Expression(variables=["cgs"],     label ="$c_{\\mathrm{gs}}\\ (F)$")
-        self.cbg_expression     = Expression(variables=["cbg"],     label ="$c_{\\mathrm{bg}}\\ (F)$")
-        self.cgd_expression     = Expression(variables=["cgd"],     label ="$c_{\\mathrm{gd}}\\ (F)$")
-        self.cdd_expression     = Expression(variables=["cdd"],     label ="$c_{\\mathrm{dd}}\\ (F)$")
+        self.length_expression  = Expression(variables=["length"],  label="$\\mathrm{Length}\\ (m)$")
+        self.vsb_expression     = Expression(variables=["vsb"],     label="$V_{\\mathrm{SB}}\\ (V)$")
+        self.vgs_expression     = Expression(variables=["vgs"],     label="$V_{\\mathrm{GS}}\\ (V)$")
+        self.vds_expression     = Expression(variables=["vds"],     label="$V_{\\mathrm{DS}}\\ (V)$")
+        self.id_expression      = Expression(variables=["id"],      label="$I_{D}\\ (A)$")
+        self.vth_expression     = Expression(variables=["vth"],     label="$V_{\\mathrm{TH}}\\ (V)$")
+        self.vdsat_expression   = Expression(variables=["vdsat"],   label="$V_{\\mathrm{DS_{\\mathrm{SAT}}}}\\ (V)$")
+        self.gm_expression      = Expression(variables=["gm"],      label="$g_{m}\\ (S)$")
+        self.gmbs_expression    = Expression(variables=["gmbs"],    label="$g_{\\mathrm{mbs}}\\ (S)$")
+        self.gds_expression     = Expression(variables=["gds"],     label="$g_{\\mathrm{ds}}\\ (S)$")
+        self.cgg_expression     = Expression(variables=["cgg"],     label="$c_{\\mathrm{gg}}\\ (F)$")
+        self.cgs_expression     = Expression(variables=["cgs"],     label="$c_{\\mathrm{gs}}\\ (F)$")
+        self.cbg_expression     = Expression(variables=["cbg"],     label="$c_{\\mathrm{bg}}\\ (F)$")
+        self.cgd_expression     = Expression(variables=["cgd"],     label="$c_{\\mathrm{gd}}\\ (F)$")
+        self.cdd_expression     = Expression(variables=["cdd"],     label="$c_{\\mathrm{dd}}\\ (F)$")
 
         # Initialize computed expressions.
         self.gmid_expression = Expression(
@@ -108,8 +123,10 @@ class Mosfet:
             function=lambda x: 1 / x,
             label="$r_{\\mathrm{ds}}\\ (\\Omega)$"
         )
+    # >>>
 
-    def _calculate_from_expression(
+    # calculate from expression <<<
+    def calculate_from_expression(
         self,
         expression: Expression,
         filter_by_rows: Optional[np.ndarray] = None
@@ -125,68 +142,53 @@ class Mosfet:
             A tuple containing the computed numpy array and the expression's label.
         """
         return evaluate_expression(expression, self.extracted_table, filter_by_rows)
+    # >>>
 
+    # plot by expression <<<
     def plot_by_expression(
         self,
+        *,
         x_expression: Expression,
         y_expression: Expression,
-        lengths: Optional[Union[float, List[float], np.ndarray]] = None,
+        filtered_values: Optional[Union[float, List[float], np.ndarray]] = None,
         x_limit: Optional[Tuple[float, float]] = None,
         y_limit: Optional[Tuple[float, float]] = None,
         x_scale: str = "",
         y_scale: str = "",
         x_eng_format: bool = False,
         y_eng_format: bool = False,
-        title: Optional[str] = None,
         save_fig: str = "",
         return_result: bool = False
     ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """
-        Plots data computed from expressions for the x and y axes.
-
-        Args:
-            x_expression: Expression for computing x-axis values.
-            y_expression: Expression for computing y-axis values.
-            lengths: Optional length filter.
-            x_limit: Optional limits for the x-axis.
-            y_limit: Optional limits for the y-axis.
-            x_scale: Optional x-axis scale type (e.g., 'log').
-            y_scale: Optional y-axis scale type.
-            x_eng_format: If True, format x-axis labels in engineering units.
-            y_eng_format: If True, format y-axis labels in engineering units.
-            title: Optional title for the plot.
-            save_fig: Optional filename to save the figure.
-            return_result: If True, return the computed x and y arrays.
-
-        Returns:
-            A tuple (x, y) of numpy arrays if return_result is True; otherwise, None.
+        Plots computed x and y expressions, filtering by the secondary sweep variable.
         """
-        title_label: List[str] = []
-        variables_labels = ["lengths", "vsb", "vgs", "vds"]
-        model_name = self.lookup_table.get("model_name", "")
+        # Choose filtering variable: secondary if available, else 'length'
+        filter_var = self.secondary_var if self.secondary_var is not None else "length"
+        sec_values = self.filtered_variables[filter_var]
 
-        for i, v in enumerate(self.filtered_variables):
-            if not isinstance(v, np.ndarray):
-                label = variables_labels[i]
-                title_label.extend([f"V_{{\\mathrm{{{label[1:].upper()}}}}}", str(v)])
+        if filtered_values is not None:
+            if isinstance(filtered_values, (list, np.ndarray)):
+                indices = np.nonzero(np.isin(sec_values, np.array(filtered_values)))[0]
+            else:
+                indices = np.array([np.abs(sec_values - filtered_values).argmin()])
+        else:
+            indices = np.arange(len(sec_values))
 
-        plot_title = title if title is not None else (
-            f"{model_name}, " + "$%s=%s$, $%s=%s$" % tuple(title_label)
-        )
+        legend_values = np.array(sec_values)[indices]
+        legend_title_mapping = {
+            "length": "Length",
+            "vsb": "$V_{\\mathrm{SB}}$",
+            "vgs": "$V_{\\mathrm{GS}}$",
+            "vds": "$V_{\\mathrm{DS}}$"
+        }
+        legend_title = legend_title_mapping.get(filter_var, filter_var)
 
-        indices = (
-            np.nonzero(np.isin(self.lengths, np.array(lengths)))[0]
-            if lengths is not None
-            else np.arange(len(self.lengths))
-        )
-
-        legend = [f"{length}" for length in np.array(self.lengths)[indices]]
-
-        x, x_label = self._calculate_from_expression(x_expression, indices)
-        y, y_label = self._calculate_from_expression(y_expression, indices)
+        x, x_label = self.calculate_from_expression(x_expression, indices)
+        y, y_label = self.calculate_from_expression(y_expression, indices)
 
         fig, ax = self.plotter.create_figure(
-            title=plot_title,
+            title="",
             x_label=x_label,
             y_label=y_label,
             x_lim=x_limit,
@@ -197,23 +199,29 @@ class Mosfet:
             y_eng_format=y_eng_format
         )
 
-        self.plotter.plot_data(ax, x, y, legend=legend, save_fig=save_fig)
+        self.plotter.plot_data(
+            ax, x, y,
+            legend=legend_values,
+            legend_title=legend_title,
+            save_fig=save_fig,
+        )
 
         if return_result:
             return x, y
-
         return None
+    # >>>
 
+    # plot by sweep <<<
     def plot_by_sweep(
         self,
-        lengths: Union[float, List[float], np.ndarray],
-        vsb: Union[float, Tuple[float, float, float]],
-        vgs: Union[float, Tuple[float, float, float]],
-        vds: Union[float, Tuple[float, float, float]],
-        primary: str,
+        *,
         x_expression: Expression,
         y_expression: Expression,
-        title: str = "",
+        primary: str,
+        length: Optional[Union[float, List[float], np.ndarray]] = None,
+        vsb: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+        vgs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+        vds: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         x_limit: Optional[Tuple[float, float]] = None,
         y_limit: Optional[Tuple[float, float]] = None,
         x_scale: str = "",
@@ -224,17 +232,21 @@ class Mosfet:
         return_result: bool = False
     ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """
-        Plots data by sweeping the parameters.
+        Exactly two of the parameters `length`, `vsb`, `vgs`, and `vds` must be provided as fixed values.
+        The remaining parameters can be specified as a range (or set to `None` to use the full range from the lookup table).
+        Any parameter not fixed is treated as the secondary sweep variable.
+
+        If two parameters are given as ranges, you must indicate which one is the primary sweep variable
+        using the `primary` argument.
 
         Args:
-            lengths: Length(s) to filter the lookup table.
+            length: Length(s) to filter the lookup table.
             vsb: Source-to-body voltage (or sweep range).
             vgs: Gate-to-source voltage (or sweep range).
             vds: Drain-to-source voltage (or sweep range).
             primary: The primary sweep variable.
             x_expression: Expression for x-axis computation.
             y_expression: Expression for y-axis computation.
-            title: Title of the plot.
             x_limit: Optional x-axis limits.
             y_limit: Optional y-axis limits.
             x_scale: Optional x-axis scale type.
@@ -247,19 +259,19 @@ class Mosfet:
         Returns:
             A tuple (x, y) if return_result is True; otherwise, None.
         """
-        sec_idx, filtered_vars, extracted_table = extract_2d_table(
+        secondary_var, filtered_vars, extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
             width=self.width,
-            lengths=lengths,
+            length=length,
             vsb=vsb,
             vgs=vgs,
             vds=vds,
             primary=primary,
         )
+
         x, x_label = evaluate_expression(x_expression, extracted_table)
         y, y_label = evaluate_expression(y_expression, extracted_table)
-        _, ax = self.plotter.create_figure(
-            title=title,
+        fig, ax = self.plotter.create_figure(
             x_label=x_label,
             y_label=y_label,
             x_lim=x_limit,
@@ -269,18 +281,31 @@ class Mosfet:
             x_eng_format=x_eng_format,
             y_eng_format=y_eng_format
         )
+
         legend = None
-        if sec_idx is not None:
-            legend = [str(sw) for sw in filtered_vars[sec_idx]]
-        self.plotter.plot_data(ax, x, y, legend=legend, save_fig=save_fig)
+        legend_title = None
+        if secondary_var is not None:
+            legend = [sw for sw in filtered_vars[secondary_var]]
+            legend_title_mapping = {
+                "length": "Length",
+                "vsb": "$V_{\\mathrm{SB}}$",
+                "vgs": "$V_{\\mathrm{GS}}$",
+                "vds": "$V_{\\mathrm{DS}}$"
+            }
+            legend_title = legend_title_mapping.get(secondary_var, secondary_var)
+
+        self.plotter.plot_data(ax, x, y, legend=legend, legend_title=legend_title, save_fig=save_fig)
         if return_result:
             return x, y
         return None
+    # >>>
 
+    # quick_plot <<<
     def quick_plot(
         self,
-        x: np.ndarray,
-        y: np.ndarray,
+        *,
+        x: Union[np.ndarray, List[np.ndarray]],
+        y: Union[np.ndarray, List[np.ndarray]],
         x_label: str = "",
         y_label: str = "",
         x_limit: Optional[Tuple[float, float]] = None,
@@ -296,9 +321,12 @@ class Mosfet:
         """
         Quickly plots the provided x and y data.
 
+        x and y can be either a single numpy array or a list of numpy arrays.
+        This method creates a figure using the plotter and plots the data.
+
         Args:
-            x: x-axis data as a numpy array.
-            y: y-axis data as a numpy array.
+            x: x-axis data as a numpy array or a list of numpy arrays.
+            y: y-axis data as a numpy array or a list of numpy arrays.
             x_label: Label for the x-axis.
             y_label: Label for the y-axis.
             x_limit: Optional x-axis limits.
@@ -323,9 +351,12 @@ class Mosfet:
             y_eng_format=y_eng_format
         )
         self.plotter.plot_data(ax, x, y, legend=legend, save_fig=save_fig)
+    # >>>
 
+    # interpolate <<<
     def interpolate(
         self,
+        *,
         x_expression: Expression,
         x_value: Union[float, Tuple[float, float], np.ndarray],
         y_expression: Expression,
@@ -353,10 +384,13 @@ class Mosfet:
         else:
             interpolator = KDTreeInterpolator(self.extracted_table)
         return interpolator.interpolate(x_expression, x_value, y_expression, y_value, z_expression)
+    # >>>
 
+    # lookup expression from table <<<
     def lookup_expression_from_table(
         self,
-        lengths: Union[float, List[float], np.ndarray],
+        *,
+        length: Union[float, List[float], np.ndarray],
         vsb: Union[float, Tuple[float, float, float]],
         vgs: Union[float, Tuple[float, float, float]],
         vds: Union[float, Tuple[float, float, float]],
@@ -367,7 +401,7 @@ class Mosfet:
         Evaluates one or more expressions on the lookup table without interpolation.
 
         Args:
-            lengths: The MOSFET lengths to filter the table.
+            length: The MOSFET length to filter the table.
             vsb: The source-body voltage parameter.
             vgs: The gate-source voltage parameter.
             vds: The drain-source voltage parameter.
@@ -381,7 +415,7 @@ class Mosfet:
         _, _, extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
             width=self.width,
-            lengths=lengths,
+            length=length,
             vsb=vsb,
             vgs=vgs,
             vds=vds,
@@ -396,4 +430,4 @@ class Mosfet:
             return [process_expr(expr) for expr in expression]
         else:
             return process_expr(expression)
-
+    # >>>

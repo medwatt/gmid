@@ -1,7 +1,9 @@
+# imports <<<
+from typing import List, Optional, Tuple, Union
 import matplotlib.pyplot as plt
-from matplotlib.ticker import EngFormatter
-from typing import Tuple, Optional, Union, List
 import numpy as np
+from matplotlib.ticker import EngFormatter
+# >>>
 
 class Plotter:
     def __init__(self, fig_size: Tuple[int, int] = (8, 4), line_width: float = 1.5, grid_color: str = "0.9") -> None:
@@ -40,23 +42,46 @@ class Plotter:
             ax.yaxis.set_major_formatter(EngFormatter(unit=""))
         return fig, ax
 
+
     def plot_data(
         self,
         ax: plt.Axes,
-        x: Union[np.ndarray, List],
-        y: Union[np.ndarray, List],
-        legend: Optional[List[str]] = None,
+        x: Union[np.ndarray, List[np.ndarray]],
+        y: Union[np.ndarray, List[np.ndarray]],
+        legend: Optional[Union[np.ndarray, List[Union[float, str]]]] = None,
+        legend_title: Optional[str] = None,
         save_fig: str = ""
     ) -> None:
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray) and x.ndim == y.ndim:
-            ax.plot(x.T, y.T, lw=self.line_width, picker=True)
+        # Plot data when x and y are numpy arrays.
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+            if x.ndim > 1 and y.ndim > 1:
+                ax.plot(x.T, y.T, lw=self.line_width, picker=True)
+            else:
+                ax.plot(x, y, lw=self.line_width, picker=True)
+        # Plot data when x and y are lists or tuples.
         elif isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
-            for x_, y_ in zip(x, y):
-                ax.plot(x_, y_, lw=self.line_width, picker=True)
+            for x_item, y_item in zip(x, y):
+                if isinstance(x_item, np.ndarray) and isinstance(y_item, np.ndarray):
+                    if x_item.ndim > 1 and y_item.ndim > 1:
+                        ax.plot(x_item.T, y_item.T, lw=self.line_width, picker=True)
+                    else:
+                        ax.plot(x_item, y_item, lw=self.line_width, picker=True)
+                else:
+                    ax.plot(np.asarray(x_item), np.asarray(y_item), lw=self.line_width, picker=True)
         else:
-            ax.plot(x, y, lw=self.line_width, picker=True)
-        if legend:
-            ax.legend(legend, loc="center left", bbox_to_anchor=(1, 0.5))
+            # Fallback: convert inputs to arrays.
+            ax.plot(np.asarray(x), np.asarray(y), lw=self.line_width, picker=True)
+
+        if legend is not None:
+            # Determine if legend items are numeric.
+            if isinstance(legend[0], (int, float, np.number)):
+                formatter = EngFormatter(unit="")
+                formatted_legend = [formatter(val) for val in legend]
+            else:
+                formatted_legend = legend
+            leg = ax.legend(formatted_legend, loc="center left", bbox_to_anchor=(1, 0.5), title=legend_title)
+            leg.get_title().set_fontsize("large")
+
         if save_fig:
             ax.figure.savefig(save_fig, bbox_inches="tight")
         plt.show()
