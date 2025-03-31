@@ -68,8 +68,6 @@ class Mosfet:
         self.vgs = self.filtered_variables["vgs"]
         self.vds = self.filtered_variables["vds"]
 
-        self.plotter = Plotter()
-
         # Initialize basic expressions.
         self.length_expression  = Expression(variables=["length"],  label="$\\mathrm{Length}\\ (m)$")
         self.vsb_expression     = Expression(variables=["vsb"],     label="$V_{\\mathrm{SB}}\\ (V)$")
@@ -150,23 +148,49 @@ class Mosfet:
         *,
         x_expression: Expression,
         y_expression: Expression,
+        y2_expression: Optional[Expression] = None,
         filtered_values: Optional[Union[float, List[float], np.ndarray]] = None,
         x_limit: Optional[Tuple[float, float]] = None,
         y_limit: Optional[Tuple[float, float]] = None,
+        y2_limit: Optional[Tuple[float, float]] = None,
         x_scale: str = "",
         y_scale: str = "",
+        y2_scale: str = "",
         x_eng_format: bool = False,
         y_eng_format: bool = False,
+        y2_eng_format: bool = False,
         save_fig: str = "",
+        legend_location: Optional[Tuple[float, float]] = None,
         return_result: bool = False
-    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    ) -> Optional[Tuple]:
         """
-        Plots computed x and y expressions, filtering by the secondary sweep variable.
+        Plot computed x, y, and optionally y2 expressions, filtering by the secondary sweep variable.
+
+        If y2_expression is provided, a twin y-axis plot is created.
+
+        Parameters:
+            x_expression: Expression for x-axis computation.
+            y_expression: Expression for primary y-axis computation.
+            y2_expression: Optional expression for secondary y-axis computation.
+            filtered_values: Values to filter the secondary sweep variable.
+            x_limit: Limits for the x-axis.
+            y_limit: Limits for the primary y-axis.
+            y2_limit: Limits for the secondary y-axis.
+            x_scale: Scale type for the x-axis.
+            y_scale: Scale type for the primary y-axis.
+            y2_scale: Scale type for the secondary y-axis.
+            x_eng_format: If True, format the x-axis in engineering units.
+            y_eng_format: If True, format the primary y-axis in engineering units.
+            y2_eng_format: If True, format the secondary y-axis in engineering units.
+            save_fig: Filename to save the figure.
+            return_result: If True, return the computed arrays.
+
+        Returns:
+            A tuple (x, y, y2) if y2_expression is provided; otherwise, (x, y) when return_result is True.
         """
-        # Choose filtering variable: secondary if available, else 'length'
+
         filter_var = self.secondary_var if self.secondary_var is not None else "length"
         sec_values = self.filtered_variables[filter_var]
-
         if filtered_values is not None:
             if isinstance(filtered_values, (list, np.ndarray)):
                 indices = np.nonzero(np.isin(sec_values, np.array(filtered_values)))[0]
@@ -183,31 +207,58 @@ class Mosfet:
             "vds": "$V_{\\mathrm{DS}}$"
         }
         legend_title = legend_title_mapping.get(filter_var, filter_var)
-
         x, x_label = self.calculate_from_expression(x_expression, indices)
         y, y_label = self.calculate_from_expression(y_expression, indices)
 
-        fig, ax = self.plotter.create_figure(
-            title="",
-            x_label=x_label,
-            y_label=y_label,
-            x_lim=x_limit,
-            y_lim=y_limit,
-            x_scale=x_scale,
-            y_scale=y_scale,
-            x_eng_format=x_eng_format,
-            y_eng_format=y_eng_format
-        )
+        if y2_expression is not None:
+            self.plotter = Plotter(fig_size=(6, 4))
+            y2, y2_label = self.calculate_from_expression(y2_expression, indices)
+            fig, ax, ax2 = self.plotter.create_figure_with_twin(
+                title="",
+                x_label=x_label,
+                y_label=y_label,
+                y2_label=y2_label,
+                x_lim=x_limit,
+                y_lim=y_limit,
+                y2_lim=y2_limit,
+                x_scale=x_scale,
+                y_scale=y_scale,
+                y2_scale=y2_scale,
+                x_eng_format=x_eng_format,
+                y_eng_format=y_eng_format,
+                y2_eng_format=y2_eng_format
+            )
+            self.plotter.plot_data(
+                    ax2, x, y2,
+                    line_style="dashed",
+                    end_plotting=False
+            )
+            self.plotter.plot_data(
+                    ax, x, y,
+                    line_style="solid",
+                    legend=legend_values,
+                    legend_title=legend_title,
+                    save_fig=save_fig,
+                    legend_placement="top",
+                    bbox_to_anchor=legend_location,
+            )
+            return (x, y, y2) if return_result else None
+        else:
+            self.plotter = Plotter(fig_size=(8, 4))
+            fig, ax = self.plotter.create_figure(
+                title="",
+                x_label=x_label,
+                y_label=y_label,
+                x_lim=x_limit,
+                y_lim=y_limit,
+                x_scale=x_scale,
+                y_scale=y_scale,
+                x_eng_format=x_eng_format,
+                y_eng_format=y_eng_format
+            )
+            self.plotter.plot_data(ax, x, y, legend=legend_values, legend_title=legend_title, save_fig=save_fig)
+            return (x, y) if return_result else None
 
-        self.plotter.plot_data(
-            ax, x, y,
-            legend=legend_values,
-            legend_title=legend_title,
-            save_fig=save_fig,
-        )
-
-        if return_result:
-            return x, y
         return None
     # >>>
 
@@ -217,6 +268,7 @@ class Mosfet:
         *,
         x_expression: Expression,
         y_expression: Expression,
+        y2_expression: Optional[Expression] = None,
         primary: str,
         length: Optional[Union[float, List[float], np.ndarray]] = None,
         vsb: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
@@ -224,40 +276,46 @@ class Mosfet:
         vds: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         x_limit: Optional[Tuple[float, float]] = None,
         y_limit: Optional[Tuple[float, float]] = None,
+        y2_limit: Optional[Tuple[float, float]] = None,
         x_scale: str = "",
         y_scale: str = "",
+        y2_scale: str = "",
         x_eng_format: bool = False,
         y_eng_format: bool = False,
+        y2_eng_format: bool = False,
         save_fig: str = "",
+        legend_location: Optional[Tuple[float, float]] = None,
         return_result: bool = False
-    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    ) -> Optional[Tuple]:
         """
-        Exactly two of the parameters `length`, `vsb`, `vgs`, and `vds` must be provided as fixed values.
-        The remaining parameters can be specified as a range (or set to `None` to use the full range from the lookup table).
-        Any parameter not fixed is treated as the secondary sweep variable.
+        Plot computed x, y, and optionally y2 expressions for a sweep with fixed parameters.
 
-        If two parameters are given as ranges, you must indicate which one is the primary sweep variable
-        using the `primary` argument.
+        If y2_expression is provided, a twin y-axis plot is created.
 
-        Args:
-            length: Length(s) to filter the lookup table.
-            vsb: Source-to-body voltage (or sweep range).
-            vgs: Gate-to-source voltage (or sweep range).
-            vds: Drain-to-source voltage (or sweep range).
-            primary: The primary sweep variable.
+        Parameters:
             x_expression: Expression for x-axis computation.
-            y_expression: Expression for y-axis computation.
-            x_limit: Optional x-axis limits.
-            y_limit: Optional y-axis limits.
-            x_scale: Optional x-axis scale type.
-            y_scale: Optional y-axis scale type.
-            x_eng_format: If True, format x-axis labels in engineering units.
-            y_eng_format: If True, format y-axis labels in engineering units.
-            save_fig: Optional filename to save the figure.
-            return_result: If True, return computed (x, y) arrays.
+            y_expression: Expression for primary y-axis computation.
+            y2_expression: Optional expression for secondary y-axis computation.
+            primary: Primary sweep variable.
+            length: Length value(s) to filter the lookup table.
+            vsb: Source-body voltage value(s) or range.
+            vgs: Gate-source voltage value(s) or range.
+            vds: Drain-source voltage value(s) or range.
+            x_limit: Limits for the x-axis.
+            y_limit: Limits for the primary y-axis.
+            y2_limit: Limits for the secondary y-axis.
+            x_scale: Scale type for the x-axis.
+            y_scale: Scale type for the primary y-axis.
+            y2_scale: Scale type for the secondary y-axis.
+            x_eng_format: If True, format the x-axis in engineering units.
+            y_eng_format: If True, format the primary y-axis in engineering units.
+            y2_eng_format: If True, format the secondary y-axis in engineering units.
+            save_fig: Filename to save the figure.
+            legend_location: Optional tuple for custom legend placement.
+            return_result: If True, return the computed arrays.
 
         Returns:
-            A tuple (x, y) if return_result is True; otherwise, None.
+            A tuple (x, y, y2) if y2_expression is provided; otherwise, (x, y) when return_result is True.
         """
         secondary_var, filtered_vars, extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
@@ -268,19 +326,8 @@ class Mosfet:
             vds=vds,
             primary=primary,
         )
-
         x, x_label = evaluate_expression(x_expression, extracted_table)
         y, y_label = evaluate_expression(y_expression, extracted_table)
-        fig, ax = self.plotter.create_figure(
-            x_label=x_label,
-            y_label=y_label,
-            x_lim=x_limit,
-            y_lim=y_limit,
-            x_scale=x_scale,
-            y_scale=y_scale,
-            x_eng_format=x_eng_format,
-            y_eng_format=y_eng_format
-        )
 
         legend = None
         legend_title = None
@@ -294,10 +341,60 @@ class Mosfet:
             }
             legend_title = legend_title_mapping.get(secondary_var, secondary_var)
 
-        self.plotter.plot_data(ax, x, y, legend=legend, legend_title=legend_title, save_fig=save_fig)
-        if return_result:
-            return x, y
-        return None
+        if y2_expression is not None:
+            self.plotter = Plotter(fig_size=(6, 4))
+            y2, y2_label = evaluate_expression(y2_expression, extracted_table)
+            fig, ax, ax2 = self.plotter.create_figure_with_twin(
+                title="",
+                x_label=x_label,
+                y_label=y_label,
+                y2_label=y2_label,
+                x_lim=x_limit,
+                y_lim=y_limit,
+                y2_lim=y2_limit,
+                x_scale=x_scale,
+                y_scale=y_scale,
+                y2_scale=y2_scale,
+                x_eng_format=x_eng_format,
+                y_eng_format=y_eng_format,
+                y2_eng_format=y2_eng_format
+            )
+            self.plotter.plot_data(
+                ax2, x, y2,
+                line_style="dashed",
+                end_plotting=False
+            )
+            self.plotter.plot_data(
+                ax, x, y,
+                line_style="solid",
+                legend=legend,
+                legend_title=legend_title,
+                save_fig=save_fig,
+                legend_placement="top",
+                bbox_to_anchor=legend_location
+            )
+            return (x, y, y2) if return_result else None
+        else:
+            self.plotter = Plotter(fig_size=(8, 4))
+            fig, ax = self.plotter.create_figure(
+                title="",
+                x_label=x_label,
+                y_label=y_label,
+                x_lim=x_limit,
+                y_lim=y_limit,
+                x_scale=x_scale,
+                y_scale=y_scale,
+                x_eng_format=x_eng_format,
+                y_eng_format=y_eng_format
+            )
+            self.plotter.plot_data(
+                ax, x, y,
+                legend=legend,
+                legend_title=legend_title,
+                save_fig=save_fig,
+                bbox_to_anchor=legend_location
+            )
+            return (x, y) if return_result else None
     # >>>
 
     # quick_plot <<<

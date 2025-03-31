@@ -191,6 +191,21 @@ nmos.plot_by_expression(
 
 ![custom expression](./figures/nmos_custom_expression.svg)
 
+A second axis can also be plotted:
+
+```python
+nmos.plot_by_expression(
+    x_expression = nmos.gmid_expression,
+    y_expression = nmos.transist_frequency_expression,
+    y2_expression = nmos.gain_expression,
+    filtered_values = nmos.length[0:-1:4],
+    y_scale="log",
+    save_fig="/home/medwatt/git/gmid/figures/nmos_twin_plot.svg"
+)
+```
+
+![twin plots](./figures/nmos_twin_plot.svg)
+
 ## Looking Up Values
 
 You can also get raw values by interpolation. For example, to look up the gain
@@ -242,6 +257,25 @@ the table.
 
 The `plot_by_sweep` method uses the full table instead of the filtered table.
 Some usage examples are given below.
+
+To plot the input characteristic of the `nmos`:
+
+```python
+nmos.plot_by_sweep(
+    length=nmos.length[:-1:4],
+    vsb = 0,
+    vds = 0.6,
+    vgs = (0.01, 1.2, 0.01),
+    x_expression = nmos.vgs_expression,
+    y_expression = nmos.id_expression,
+    primary = "vgs",
+    x_eng_format=True,
+    y_eng_format=True,
+    y_scale='log',
+)
+```
+
+![input characteristic](./figures/nmos_id_vs_vgs.svg)
 
 To plot the output characteristic of the `nmos`:
 
