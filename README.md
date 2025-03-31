@@ -250,7 +250,6 @@ Here, `vgs` is assumed to be the secondary sweep variable since it is a
 range. It could be omitted or set to `None` to use all the values stored in
 the table.
 
-
 ## Plotting Methods
 
 ### Plot by Sweep
@@ -296,25 +295,26 @@ nmos.plot_by_sweep(
 
 ![output characteristic](./figures/nmos_id_vs_vds.svg)
 
-To plot the dependence of `vth` on the `length`:
+To plot the dependence of transistor speed and gain on the `length`:
 
 ```python
 nmos.plot_by_sweep(
-    length=nmos.lengths[1:],
+    length=nmos.length[1:],
     vsb = 0,
     vds = 1.2,
-    vgs = 0.9,
+    vgs = (0.4, 1.2, 0.25),
     x_expression = nmos.length_expression,
-    y_expression = nmos.vth_expression,
+    y_expression = nmos.transist_frequency_expression,
+    y2_expression = nmos.gain_expression,
     primary = "length",
     x_eng_format=True,
     y_eng_format=True,
-    y_scale='linear',
-    save_fig="./figures/nmos_vth_vs_length.svg"
+    y_scale="log",
+    y2_scale="linear",
 )
 ```
 
-![vth vs length](./figures/nmos_vth_vs_length.svg)
+![vth vs length](./figures/nmos_twin_plot_ft_gain.svg)
 
 ### Quick Plot
 
