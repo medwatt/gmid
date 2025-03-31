@@ -91,6 +91,11 @@ class Mosfet:
             function=lambda x, y: x / y,
             label="$g_m/I_D\\ (S/A)$"
         )
+        self.vov_expression = Expression(
+            variables=["vgs", "vth"],
+            function=lambda x, y: x - y,
+            label="$V_{\\mathrm{OV}}\\ (V)$"
+        )
         self.vstar_expression = Expression(
             variables=["gm", "id"],
             function=lambda x, y: (2 * y) / x,
@@ -160,7 +165,10 @@ class Mosfet:
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
         save_fig: str = "",
+        fig_size: Optional[Tuple[int, int]] = None,
+        legend_placement: Optional[str] = None,
         legend_location: Optional[Tuple[float, float]] = None,
+        show_legend: bool = True,
         return_result: bool = False
     ) -> Optional[Tuple]:
         """
@@ -211,7 +219,8 @@ class Mosfet:
         y, y_label = self.calculate_from_expression(y_expression, indices)
 
         if y2_expression is not None:
-            self.plotter = Plotter(fig_size=(6, 4))
+            fig_size = (6, 4) if fig_size is None else fig_size
+            self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
             y2, y2_label = self.calculate_from_expression(y2_expression, indices)
             fig, ax, ax2 = self.plotter.create_figure_with_twin(
                 title="",
@@ -239,12 +248,13 @@ class Mosfet:
                     legend=legend_values,
                     legend_title=legend_title,
                     save_fig=save_fig,
-                    legend_placement="top",
+                    legend_placement="top" if legend_placement is None else legend_placement,
                     bbox_to_anchor=legend_location,
             )
             return (x, y, y2) if return_result else None
         else:
-            self.plotter = Plotter(fig_size=(8, 4))
+            fig_size = (8, 4) if fig_size is None else fig_size
+            self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
             fig, ax = self.plotter.create_figure(
                 title="",
                 x_label=x_label,
@@ -256,7 +266,14 @@ class Mosfet:
                 x_eng_format=x_eng_format,
                 y_eng_format=y_eng_format
             )
-            self.plotter.plot_data(ax, x, y, legend=legend_values, legend_title=legend_title, save_fig=save_fig)
+            self.plotter.plot_data(
+                ax, x, y,
+                legend_placement=legend_placement,
+                bbox_to_anchor=legend_location,
+                legend=legend_values,
+                legend_title=legend_title,
+                save_fig=save_fig,
+            )
             return (x, y) if return_result else None
 
         return None
@@ -284,7 +301,10 @@ class Mosfet:
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
         save_fig: str = "",
+        fig_size: Optional[Tuple[int, int]] = None,
         legend_location: Optional[Tuple[float, float]] = None,
+        legend_placement: Optional[str] = None,
+        show_legend: bool = True,
         return_result: bool = False
     ) -> Optional[Tuple]:
         """
@@ -342,7 +362,8 @@ class Mosfet:
             legend_title = legend_title_mapping.get(secondary_var, secondary_var)
 
         if y2_expression is not None:
-            self.plotter = Plotter(fig_size=(6, 4))
+            fig_size = (6, 4) if fig_size is None else fig_size
+            self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
             y2, y2_label = evaluate_expression(y2_expression, extracted_table)
             fig, ax, ax2 = self.plotter.create_figure_with_twin(
                 title="",
@@ -370,12 +391,13 @@ class Mosfet:
                 legend=legend,
                 legend_title=legend_title,
                 save_fig=save_fig,
-                legend_placement="top",
+                legend_placement="top" if legend_placement is None else legend_placement,
                 bbox_to_anchor=legend_location
             )
             return (x, y, y2) if return_result else None
         else:
-            self.plotter = Plotter(fig_size=(8, 4))
+            fig_size = (8, 4) if fig_size is None else fig_size
+            self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
             fig, ax = self.plotter.create_figure(
                 title="",
                 x_label=x_label,
@@ -391,6 +413,7 @@ class Mosfet:
                 ax, x, y,
                 legend=legend,
                 legend_title=legend_title,
+                legend_placement="right" if legend_placement is None else legend_placement,
                 save_fig=save_fig,
                 bbox_to_anchor=legend_location
             )
@@ -412,6 +435,11 @@ class Mosfet:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         legend: Optional[List[str]] = None,
+        fig_size: Optional[Tuple[int, int]] = None,
+        legend_title: Optional[str] = "",
+        legend_location: Optional[Tuple[float, float]] = None,
+        legend_placement: Optional[str] = None,
+        show_legend: bool = True,
         title: Optional[str] = None,
         save_fig: str = ""
     ) -> None:
@@ -436,6 +464,7 @@ class Mosfet:
             title: Optional title for the plot.
             save_fig: Optional filename to save the figure.
         """
+        self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
         _, ax = self.plotter.create_figure(
             title=title or "",
             x_label=x_label,
@@ -447,7 +476,14 @@ class Mosfet:
             x_eng_format=x_eng_format,
             y_eng_format=y_eng_format
         )
-        self.plotter.plot_data(ax, x, y, legend=legend, save_fig=save_fig)
+        self.plotter.plot_data(
+            ax, x, y,
+            legend=legend,
+            legend_title=legend_title,
+            legend_placement=legend_placement,
+            save_fig=save_fig,
+            bbox_to_anchor=legend_location
+        )
     # >>>
 
     # interpolate <<<

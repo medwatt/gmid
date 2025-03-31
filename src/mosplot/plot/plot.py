@@ -12,10 +12,12 @@ class Plotter:
         fig_size: Tuple[int, int] = (8, 4),
         line_width: float = 1.5,
         grid_color: str = "0.9",
+        show_legend: bool = True,
     ) -> None:
         self.fig_size = fig_size
         self.line_width = line_width
         self.grid_color = grid_color
+        self.show_legend = show_legend
 
     # single axis plot <<<
     def create_figure(
@@ -35,7 +37,7 @@ class Plotter:
         ax.set_title(title)
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.grid(True, which="both", ls="--", color=self.grid_color)
+        ax.grid(True, which="major", ls="--", color=self.grid_color)
 
         if x_lim is not None:
             ax.set_xlim(*x_lim)
@@ -81,9 +83,9 @@ class Plotter:
         ax.set_title(title)
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
+        ax.grid(True, which="major", ls="--", color=self.grid_color)
         ax2 = ax.twinx()
         ax2.set_ylabel(y2_label)
-        ax.grid(True, which="both", ls="--", color=self.grid_color)
 
         if x_lim is not None:
             ax.set_xlim(*x_lim)
@@ -124,7 +126,7 @@ class Plotter:
         line_style: Optional[str] = "solid",
         legend: Optional[Union[np.ndarray, List[Union[float, str]]]] = None,
         legend_title: Optional[str] = None,
-        legend_placement: Optional[str] = None,
+        legend_placement: Optional[str] = "right",
         bbox_to_anchor: Optional[Tuple[float, float]] = None,
         save_fig: str = "",
         end_plotting: bool = True,
@@ -176,7 +178,7 @@ class Plotter:
             )
 
         if end_plotting:
-            if legend is not None:
+            if legend is not None and self.show_legend:
                 # Determine if legend items are numeric.
                 if isinstance(legend[0], (int, float, np.number)):
                     formatter = EngFormatter(unit="")
@@ -203,7 +205,8 @@ class Plotter:
                         ncol=len(formatted_legend),
                         title=legend_title,
                     )
-                else:
+
+                elif legend_placement == "right":
                     anchor = (1, 0.5) if bbox_to_anchor is None else bbox_to_anchor
                     leg = ax.legend(
                         formatted_legend,
@@ -212,9 +215,19 @@ class Plotter:
                         title=legend_title,
                     )
 
+                else:
+                    leg = ax.legend(
+                        formatted_legend,
+                        loc="best",
+                        title=legend_title,
+                    )
+
                 leg.get_title().set_fontsize("large")
+
+            plt.minorticks_off()
 
             if save_fig:
                 ax.figure.savefig(save_fig, bbox_inches="tight")
+
             plt.show()
     # >>>

@@ -95,7 +95,7 @@ obj.build("./freepdk_45nm")
 
 ```python
 import numpy as np
-from mosplot.plot import load_lookup_table, Mosfet
+from mosplot.plot import load_lookup_table, Mosfet, Expression
 ```
 
 Load a lookup table:
