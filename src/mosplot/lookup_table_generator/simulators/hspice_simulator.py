@@ -135,9 +135,9 @@ class HspiceSimulator(BaseSimulator):
             loaded_data = pickle.load(file)
         return loaded_data
 
-    def save_parameters(self, analysis, transistor_type, length, vsb, lookup_table, n_vgs, n_vds):
+    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
         for p in self.parameters_to_save:
             col_name = self.parameter_table[p][1]
             if col_name in analysis.keys():
                 res = np.array(analysis[col_name]).T
-                lookup_table[transistor_type][p][length][vsb] = res
+                lookup_table[transistor_type][p][length][vbs] = res

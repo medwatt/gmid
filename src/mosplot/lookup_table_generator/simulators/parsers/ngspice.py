@@ -1,7 +1,7 @@
 import numpy as np
 
 class NgspiceRawFileReader:
-    def __init__(self, dtype=np.float32):
+    def __init__(self):
         self.bsize_sp = 512
         self.mdata_list = [
             b"title",
@@ -14,7 +14,6 @@ class NgspiceRawFileReader:
             b"command",
             b"option",
         ]
-        self.dtype = dtype
 
     def read_file(self, fname):
         """Read ngspice binary raw files. Return tuple of the data, and the
@@ -51,14 +50,15 @@ class NgspiceRawFileReader:
                                 "formats": [
                                     np.complex_
                                     if b"complex" in plot[b"flags"]
-                                    else self.dtype
+                                    else np.float64
                                 ]
                                 * nvars,
                             }
                         )
                         arrs.append(np.fromfile(fp, dtype=rowdtype, count=npoints))
                         plots.append(plot.copy())
-                        fp.readline()  # Read to the end of line
+                        fp.readline()
                 else:
                     break
         return (arrs, plots)
+

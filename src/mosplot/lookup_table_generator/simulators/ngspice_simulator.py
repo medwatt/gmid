@@ -100,7 +100,7 @@ class NgspiceSimulator(BaseSimulator):
         analysis, _ = reader.read_file(self.output_file_path)
         return analysis
 
-    def save_parameters(self, analysis, transistor_type, length, vsb, lookup_table, n_vgs, n_vds):
+    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
         column_names = analysis[0].dtype.names
         data = analysis[0]
 
@@ -108,4 +108,4 @@ class NgspiceSimulator(BaseSimulator):
             col_name = self.parameter_table[p][1]
             if col_name in column_names:
                 res = np.array(data[col_name])
-                lookup_table[transistor_type][p][length][vsb] = res.reshape(n_vgs, n_vds)
+                lookup_table[transistor_type][p][length][vbs] = res.reshape(n_vgs, n_vds)

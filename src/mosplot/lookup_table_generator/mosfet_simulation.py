@@ -1,23 +1,24 @@
+# ./mosfet_simulation.py
 # imports <<<
 import numpy as np
 # >>>
 
 class MosfetSimulation:
-    def __init__(self, simulator, netlist_gen, vgs, vds, vsb, length, n_vgs, n_vds, n_vsb, model_names):
+    def __init__(self, simulator, netlist_gen, sweeps):
+        """
+        sweeps: dict mapping transistor name to TransistorSweep objects.
+        """
         self.simulator = simulator
         self.netlist_gen = netlist_gen
-        self.vgs = vgs
-        self.vds = vds
-        self.vsb = vsb
-        self.length = length
-        self.n_vgs = n_vgs
-        self.n_vds = n_vds
-        self.n_vsb = n_vsb
-        self.model_names = model_names
+        self.sweeps = sweeps  # Contains sweep info per transistor model
         self.lookup_table = {}
-        for mosfet_model in self.model_names.keys():
+        # Initialize lookup table for each transistor model using each sweep's parameters.
+        for mosfet_model, sweep in self.sweeps.items():
+            n_vgs = int(round((sweep.vgs[1] - sweep.vgs[0]) / sweep.vgs[2])) + 1
+            n_vds = int(round((sweep.vds[1] - sweep.vds[0]) / sweep.vds[2])) + 1
+            n_vbs = int(round((sweep.vbs[1] - sweep.vbs[0]) / sweep.vbs[2])) + 1
             self.lookup_table[mosfet_model] = {
-                p: np.zeros((len(self.length), n_vsb, n_vgs, n_vds), dtype=np.float32)
+                p: np.zeros((len(sweep.length), n_vbs, n_vgs, n_vds), dtype=np.float32)
                 for p in simulator.parameters_to_save
             }
 
@@ -26,11 +27,12 @@ class MosfetSimulation:
         return np.linspace(start, stop, count)
 
     def get_single_netlist(self, sim_func):
-        transistor_name = next(iter(self.model_names.keys()))
-        length = next(iter(self.length))
-        vsb_val = next(iter(self.linspace(*self.vsb)))
-        netlist = self.netlist_gen.generate_netlist(transistor_name, length, vsb_val)
-        sim_setup = sim_func(self.vgs, self.vds)
+        # Select the first transistor sweep for a sample netlist.
+        transistor_name, sweep = next(iter(self.sweeps.items()))
+        length = sweep.length[0]
+        vbs_val = next(iter(self.linspace(*sweep.vbs)))
+        netlist = self.netlist_gen.generate_netlist(transistor_name, length, vbs_val)
+        sim_setup = sim_func(sweep.vgs, sweep.vds)
         return netlist + sim_setup
 
     def print_netlist(self):
@@ -48,24 +50,20 @@ class MosfetSimulation:
 
     def simulate(self):
         self.print_netlist()
-        for transistor_name, type_type in self.model_names.items():
-            r = -1 if type_type == "pmos" else 1
-
+        for transistor_name, sweep in self.sweeps.items():
             print(f"Simulating {transistor_name}")
-
-            for l_idx, length in enumerate(self.length):
-
+            for l_idx, length in enumerate(sweep.length):
                 print("Length:", length)
-
-                for vsb_idx, vsb_val in enumerate(self.linspace(*self.vsb)):
-                    netlist = self.netlist_gen.generate_netlist(transistor_name, length, vsb_val)
-                    sim_setup = self.simulator.setup_dc_simulation(self.vgs * r, self.vds * r)
+                for vbs_idx, vbs_val in enumerate(self.linspace(*sweep.vbs)):
+                    netlist = self.netlist_gen.generate_netlist(transistor_name, length, vbs_val)
+                    sim_setup = self.simulator.setup_dc_simulation(sweep.vgs, sweep.vds)
                     full_netlist = netlist + sim_setup
                     self.simulator.run_simulation(full_netlist)
                     analysis = self.simulator.parse_output()
                     self.simulator.save_parameters(
-                        analysis, transistor_name, l_idx, vsb_idx,
-                        self.lookup_table, self.n_vgs, self.n_vds
+                        analysis, transistor_name, l_idx, vbs_idx,
+                        self.lookup_table,
+                        int(round((sweep.vgs[1]-sweep.vgs[0])/sweep.vgs[2]))+1,
+                        int(round((sweep.vds[1]-sweep.vds[0])/sweep.vds[2]))+1
                     )
-
             print("")

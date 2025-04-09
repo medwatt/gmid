@@ -1,6 +1,6 @@
 class MosfetNetlistGenerator:
-    def __init__(self, model_names, width, mos_spice_symbols, include_paths, lib_path_and_names, raw_spice):
-        self.model_names = model_names
+    def __init__(self, model_sweeps, width, mos_spice_symbols, include_paths, lib_path_and_names, raw_spice):
+        self.model_sweeps = model_sweeps  # Now mapping to TransistorSweep objects
         self.width = width
         self.raw_spice = raw_spice
         self.mos_spice_symbols = mos_spice_symbols
@@ -17,11 +17,9 @@ class MosfetNetlistGenerator:
             return "\n".join([f".lib '{path}' {libname}" for path, libname in self.lib_path_and_names])
         return None
 
-    def generate_netlist(self, mosfet_model, length, vsb):
+    def generate_netlist(self, mosfet_model, length, vbs):
         include_str = self.get_include_string()
         lib_str = self.get_lib_string()
-        transistor_type = self.model_names[mosfet_model]
-        r = -1 if transistor_type == "nmos" else 1
 
         netlist = ["* Lookup Table Generation *"]
 
@@ -31,11 +29,13 @@ class MosfetNetlistGenerator:
         if lib_str:
             netlist.append(lib_str)
 
+        parameters = f"w={self.width} l={length}"
+
         netlist.extend([
             "VGS NG 0 DC=0",
-            f"VBS NB 0 DC={vsb*r}",
+            f"VBS NB 0 DC={vbs}",
             "VDS ND 0 DC=0",
-            f"{self.mos_spice_symbols[0]} ND NG 0 NB {mosfet_model} l={length} w={self.width}",
+            f"{self.mos_spice_symbols[0]} ND NG 0 NB {mosfet_model} {parameters}",
         ])
 
         if self.raw_spice:

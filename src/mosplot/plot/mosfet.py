@@ -12,11 +12,11 @@ from .plot import Plotter
 
 class Mosfet:
     """
-    Initialize a MOSFET model object.
+    Initialize a MOSFET object.
 
-    When creating a MOSFET object, exactly two of the parameters `length`, `vsb`, `vgs`, and `vds`
-    must be provided as fixed values. The remaining parameters can be specified as a range (or set to
-    `None` to use the full range from the lookup table). Any parameter not fixed is treated as the
+    When creating a MOSFET object, exactly two of the parameters `length`, `vbs`, `vgs`, and `vds`
+    must be provided as fixed values. The remaining parameters can be specified as a range or set to
+    `None` to use the full range from the lookup table. Any parameter not fixed is treated as the
     secondary sweep variable.
 
     If two parameters are given as ranges, you must indicate which one is the primary sweep variable
@@ -26,15 +26,15 @@ class Mosfet:
         lookup_table: dictionary containing MOSFET parameter data.
         mos: model name of the MOSFET.
         length: mosfet length.
-        vsb: source-body voltage.
+        vbs: body-source voltage.
         vgs: gate-source voltage.
         vds: drain-source voltage.
         primary: name of the primary sweep.
 
     Examples:
         Fixed vds; sweep vgs (primary) and length (secondary)
-        nmos = Mosfet(lookup_table=lookup_table, mos="nch_lvt", vsb=0.0, vds=0.4, vgs=(0.01, 1.19))
-        pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vsb=0.0, vgs=-0.4, vds=(-1.19, -0.01))
+        nmos = Mosfet(lookup_table=lookup_table, mos="nch_lvt", vbs=0.0, vds=0.4, vgs=(0.01, 1.19))
+        pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vbs=0.0, vgs=-0.4, vds=(-1.19, -0.01))
     """
     # init <<<
     def __init__(
@@ -43,7 +43,7 @@ class Mosfet:
         lookup_table: dict,
         mos: str,
         length: Optional[Union[float, List[float], np.ndarray]] = None,
-        vsb: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+        vbs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         vgs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         vds: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         primary: Optional[str] = None
@@ -58,19 +58,19 @@ class Mosfet:
             lookup_table=self.lookup_table,
             width=self.width,
             length=length,
-            vsb=vsb,
+            vbs=vbs,
             vgs=vgs,
             vds=vds,
             primary=primary,
         )
         self.length = self.filtered_variables["length"]
-        self.vsb = self.filtered_variables["vsb"]
+        self.vbs = self.filtered_variables["vbs"]
         self.vgs = self.filtered_variables["vgs"]
         self.vds = self.filtered_variables["vds"]
 
         # Initialize basic expressions.
         self.length_expression  = Expression(variables=["length"],  label="$\\mathrm{Length}\\ (m)$")
-        self.vsb_expression     = Expression(variables=["vsb"],     label="$V_{\\mathrm{SB}}\\ (V)$")
+        self.vbs_expression     = Expression(variables=["vbs"],     label="$V_{\\mathrm{BS}}\\ (V)$")
         self.vgs_expression     = Expression(variables=["vgs"],     label="$V_{\\mathrm{GS}}\\ (V)$")
         self.vds_expression     = Expression(variables=["vds"],     label="$V_{\\mathrm{DS}}\\ (V)$")
         self.id_expression      = Expression(variables=["id"],      label="$I_{D}\\ (A)$")
@@ -210,7 +210,7 @@ class Mosfet:
         legend_values = np.array(sec_values)[indices]
         legend_title_mapping = {
             "length": "Length",
-            "vsb": "$V_{\\mathrm{SB}}$",
+            "vbs": "$V_{\\mathrm{SB}}$",
             "vgs": "$V_{\\mathrm{GS}}$",
             "vds": "$V_{\\mathrm{DS}}$"
         }
@@ -288,7 +288,7 @@ class Mosfet:
         y2_expression: Optional[Expression] = None,
         primary: str,
         length: Optional[Union[float, List[float], np.ndarray]] = None,
-        vsb: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+        vbs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         vgs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         vds: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
         x_limit: Optional[Tuple[float, float]] = None,
@@ -318,7 +318,7 @@ class Mosfet:
             y2_expression: Optional expression for secondary y-axis computation.
             primary: Primary sweep variable.
             length: Length value(s) to filter the lookup table.
-            vsb: Source-body voltage value(s) or range.
+            vbs: body-source voltage value(s) or range.
             vgs: Gate-source voltage value(s) or range.
             vds: Drain-source voltage value(s) or range.
             x_limit: Limits for the x-axis.
@@ -341,7 +341,7 @@ class Mosfet:
             lookup_table=self.lookup_table,
             width=self.width,
             length=length,
-            vsb=vsb,
+            vbs=vbs,
             vgs=vgs,
             vds=vds,
             primary=primary,
@@ -355,7 +355,7 @@ class Mosfet:
             legend = [sw for sw in filtered_vars[secondary_var]]
             legend_title_mapping = {
                 "length": "Length",
-                "vsb": "$V_{\\mathrm{SB}}$",
+                "vbs": "$V_{\\mathrm{SB}}$",
                 "vgs": "$V_{\\mathrm{GS}}$",
                 "vds": "$V_{\\mathrm{DS}}$"
             }
@@ -524,7 +524,7 @@ class Mosfet:
         self,
         *,
         length: Union[float, List[float], np.ndarray],
-        vsb: Union[float, Tuple[float, float, float]],
+        vbs: Union[float, Tuple[float, float, float]],
         vgs: Union[float, Tuple[float, float, float]],
         vds: Union[float, Tuple[float, float, float]],
         primary: str,
@@ -535,7 +535,7 @@ class Mosfet:
 
         Args:
             length: The MOSFET length to filter the table.
-            vsb: The source-body voltage parameter.
+            vbs: The body-source voltage parameter.
             vgs: The gate-source voltage parameter.
             vds: The drain-source voltage parameter.
             primary: The primary sweep variable.
@@ -549,7 +549,7 @@ class Mosfet:
             lookup_table=self.lookup_table,
             width=self.width,
             length=length,
-            vsb=vsb,
+            vbs=vbs,
             vgs=vgs,
             vds=vds,
             primary=primary,

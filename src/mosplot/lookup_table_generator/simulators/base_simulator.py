@@ -54,5 +54,5 @@ class BaseSimulator(ABC):
         pass
 
     @abstractmethod
-    def save_parameters(self, analysis, transistor_type, length, vsb, lookup_table, n_vgs, n_vds):
+    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
         pass

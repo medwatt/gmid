@@ -22,14 +22,14 @@ def extract_2d_table(
     lookup_table: dict,
     width: float,
     length: Optional[Union[float, list, npt.NDArray]] = None,
-    vsb: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
+    vbs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
     vgs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
     vds: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
     primary: Optional[str] = None,
     parameters: Optional[list] = None,
 ) -> Tuple[Optional[str], Dict, dict]:
     # Ensure at least two sweep parameters are provided.
-    if sum(param is not None for param in [length, vsb, vgs, vds]) < 2:
+    if sum(param is not None for param in [length, vbs, vgs, vds]) < 2:
         raise ValueError("Provide at least two parameters.")
 
     # Process a sweep target and return (indices, values, is_scalar).
@@ -59,7 +59,7 @@ def extract_2d_table(
         s = s[:, :, :, slices[3]]
         return s
 
-    sweep_params = {"length": length, "vsb": vsb, "vgs": vgs, "vds": vds}
+    sweep_params = {"length": length, "vbs": vbs, "vgs": vgs, "vds": vds}
     indices_dict = {}
     values_dict = {}
     is_scalar = {}
@@ -84,20 +84,20 @@ def extract_2d_table(
         if len(non_primary_ranges) == 1:
             secondary = non_primary_ranges[0]
         elif len(non_primary_ranges) > 1:
-            for var in ["length", "vsb", "vgs", "vds"]:
+            for var in ["length", "vbs", "vgs", "vds"]:
                 if var != primary and var in non_primary_ranges:
                     secondary = var
                     break
 
     slice_indices = (
         indices_dict["length"],
-        indices_dict["vsb"],
+        indices_dict["vbs"],
         indices_dict["vgs"],
         indices_dict["vds"],
     )
     filter_values = {
             "length": values_dict["length"],
-            "vsb": values_dict["vsb"],
+            "vbs": values_dict["vbs"],
             "vgs": values_dict["vgs"],
             "vds": values_dict["vds"],
     }
@@ -115,7 +115,7 @@ def extract_2d_table(
     key = next(iter(extracted_table))
     extracted_table["width"] = np.array(width)
     extracted_table["length"], _ = tile_arrays(values_dict["length"], extracted_table[key])
-    extracted_table["vsb"], _ = tile_arrays(values_dict["vsb"], extracted_table[key])
+    extracted_table["vbs"], _ = tile_arrays(values_dict["vbs"], extracted_table[key])
     extracted_table["vgs"], _ = tile_arrays(values_dict["vgs"], extracted_table[key])
     extracted_table["vds"], _ = tile_arrays(values_dict["vds"], extracted_table[key])
 

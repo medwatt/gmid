@@ -1,3 +1,4 @@
+# ./lookup_table_generator.py
 # imports <<<
 import os
 import numpy as np
@@ -7,52 +8,37 @@ from .mosfet_netlist_generator import MosfetNetlistGenerator
 from .mosfet_simulation import MosfetSimulation
 # >>>
 
-
 class LookupTableGenerator:
     def __init__(
         self,
         *,
-        length,                            # length = [45e-9, 100e-9, 200e-9, ...],
-        model_names,                        # model_names = {"NMOS_VTH": "nmos", "PMOS_VTH": "pmos", ...}
+        model_sweeps,                       # model_sweeps now = { "NMOS_VTH": TransistorSweep(...), ...}
         include_paths=None,                 # include_paths = [ "./models/NMOS_VTH.lib", ...]
-        lib_path_names=None,                # lib_path_names = [("./models/design_wrapper.lib", tt_pre") ...],
+        lib_mappings=None,                  # lib_mappings = [("./models/design_wrapper.lib", "tt_pre") ...],
         raw_spice=None,                     # raw_spice = ["", ...]
         mos_spice_symbols=("m1", "m1"),     # mos_spice_symbols = ("mosfet/subcircuit name", "hierarchical_name_of_transistor")
         width=10e-6,
-        vgs=(0, 1, 0.01),
-        vds=(0, 1, 0.01),
-        vsb=(0, 1, 0.1),
         simulator="ngspice",
         simulator_path=None,
-        temperature=27,
+        temperature=25,
         parameters_to_save=[],
         description="gmid lookup table",
     ):
-        self.length = np.array(length)
-        self.model_names = model_names
+        self.model_sweeps = model_sweeps
         self.include_paths = include_paths
-        self.lib_path_names = lib_path_names
+        self.lib_mappings = lib_mappings
         self.raw_spice = raw_spice
         self.mos_spice_symbols = mos_spice_symbols
         self.width = width
-        self.vgs = np.array(vgs)
-        self.vds = np.array(vds)
-        self.vsb = np.array(vsb)
         self.simulator = simulator
         self.simulator_path = simulator_path or simulator
         self.temperature = temperature
-        self.parameters_to_save = parameters_to_save
+        self.parameters_to_save = parameters_to_save or ["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"]
         self.description = description
         self.lookup_table = {}
 
-    def _range_args(self, tup):
-        start, stop, step = tup
-        return (start, stop + step, step)
-
     def choose_simulator(self):
         if self.simulator.lower() == "ngspice":
-            if not self.parameters_to_save:
-                self.parameters_to_save = ["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cbg", "cgd", "cdd"]
             return NgspiceSimulator(
                 self.simulator_path,
                 self.temperature,
@@ -61,8 +47,6 @@ class LookupTableGenerator:
                 self.mos_spice_symbols,
             )
         elif self.simulator.lower() == "hspice":
-            if not self.parameters_to_save:
-                self.parameters_to_save = ["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"]
             return HspiceSimulator(
                 self.simulator_path,
                 self.temperature,
@@ -76,30 +60,14 @@ class LookupTableGenerator:
     def prepare_simulation(self):
         simulator = self.choose_simulator()
         netlist_gen = MosfetNetlistGenerator(
-            self.model_names,
+            self.model_sweeps,
             self.width,
             self.mos_spice_symbols,
             self.include_paths,
-            self.lib_path_names,
+            self.lib_mappings,
             self.raw_spice,
         )
-
-        n_vgs = int(round((self.vgs[1] - self.vgs[0]) / self.vgs[2])) + 1
-        n_vds = int(round((self.vds[1] - self.vds[0]) / self.vds[2])) + 1
-        n_vsb = int(round((self.vsb[1] - self.vsb[0]) / self.vsb[2])) + 1
-
-        return MosfetSimulation(
-            simulator,
-            netlist_gen,
-            self.vgs,
-            self.vds,
-            self.vsb,
-            self.length,
-            n_vgs,
-            n_vds,
-            n_vsb,
-            self.model_names,
-        )
+        return MosfetSimulation(simulator, netlist_gen, self.model_sweeps)
 
     def op_simulation(self):
         simulator = self.choose_simulator()
@@ -107,6 +75,10 @@ class LookupTableGenerator:
         simulation.op_simulation()
 
     def build(self, filepath):
+        def range_args(tup):
+            start, stop, step = tup
+            return (start, stop + step, step)
+
         simulator = self.choose_simulator()
         simulation = self.prepare_simulation()
         simulation.simulate()
@@ -114,21 +86,18 @@ class LookupTableGenerator:
 
         # General table information
         self.lookup_table["width"] = self.width
-        self.lookup_table["length"] = self.length
         self.lookup_table["description"] = self.description
         self.lookup_table["simulator"] = self.simulator
         self.lookup_table["parameter_names"] = self.parameters_to_save
 
         # Store grid and meta-data for each transistor model
-        for transistor_name, transistor_type in self.model_names.items():
-            r = -1 if transistor_type == "pmos" else 1
-            self.lookup_table[transistor_name]["vgs"] = np.arange(*self._range_args(self.vgs*r))
-            self.lookup_table[transistor_name]["vds"] = np.arange(*self._range_args(self.vds*r))
-            self.lookup_table[transistor_name]["vsb"] = np.arange(*self._range_args(self.vsb*r))
+        for transistor_name, sweep in self.model_sweeps.items():
+            self.lookup_table[transistor_name]["vgs"] = np.arange(*range_args(sweep.vgs))
+            self.lookup_table[transistor_name]["vds"] = np.arange(*range_args(sweep.vds))
+            self.lookup_table[transistor_name]["vbs"] = np.arange(*range_args(sweep.vbs))
+            self.lookup_table[transistor_name]["length"] = np.array(sweep.length)
             self.lookup_table[transistor_name]["width"] = self.width
-            self.lookup_table[transistor_name]["length"] = self.length
             self.lookup_table[transistor_name]["model_name"] = transistor_name
-            self.lookup_table[transistor_name]["model_type"] = transistor_type
             self.lookup_table[transistor_name]["parameter_names"] = self.parameters_to_save
 
         # Ensure the directory exists
@@ -139,5 +108,6 @@ class LookupTableGenerator:
         # Save the file
         np.savez_compressed(f"{filepath}.npz", lookup_table=np.array(self.lookup_table, dtype=object))
 
+        # Clean up
         simulator.remove_temp_files()
         print("Done")

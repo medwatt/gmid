@@ -59,7 +59,7 @@ obj = LookupTableGenerator(
 
     # Names of models to simulate.
     # You must specify  specify the type ("nmos" or "pmos").
-    model_names={
+    model_sweeps={
         "NMOS_VTH": "nmos",
         "PMOS_VTH": "pmos",
     },
