@@ -1,7 +1,4 @@
-# ./mosfet_simulation.py
-# imports <<<
 import numpy as np
-# >>>
 
 class MosfetSimulation:
     def __init__(self, simulator, netlist_gen, sweeps):
@@ -10,8 +7,9 @@ class MosfetSimulation:
         """
         self.simulator = simulator
         self.netlist_gen = netlist_gen
-        self.sweeps = sweeps  # Contains sweep info per transistor model
+        self.sweeps = sweeps
         self.lookup_table = {}
+
         # Initialize lookup table for each transistor model using each sweep's parameters.
         for mosfet_model, sweep in self.sweeps.items():
             n_vgs = int(round((sweep.vgs[1] - sweep.vgs[0]) / sweep.vgs[2])) + 1

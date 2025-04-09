@@ -1,3 +1,4 @@
+# ./lookup_table_generator/__init__.py
 from .lookup_table_generator import LookupTableGenerator
 from .transistor_sweep import TransistorSweep
 

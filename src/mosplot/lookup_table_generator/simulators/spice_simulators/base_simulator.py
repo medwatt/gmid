@@ -1,31 +1,37 @@
-# import <<<
+# imports <<<
 from abc import ABC, abstractmethod
 import os
 import shutil
 # >>>
 
 class BaseSimulator(ABC):
-    def __init__(self, simulator_path, temperature, model_paths, parameters_to_save):
+    def __init__(self, simulator_path, temperature, include_paths, lib_mappings, parameters_to_save):
         self.simulator_path = simulator_path
         self.temperature = temperature
-        self.model_paths = model_paths
+        self.include_paths = include_paths
+        self.lib_mappings = lib_mappings
         self.parameters_to_save = parameters_to_save
         self.tmp_dir = None
-        self.input_file_path = None
-        self.log_file_path = None
-        self.output_file_path = None
-        self.parameter_table = {}
+        self.validate_paths()
 
     def validate_paths(self):
-        paths = self.model_paths.copy()
-        if self.simulator_path:
-            paths.append(self.simulator_path)
+        paths = []
+
+        # Check each include path.
+        if self.include_paths:
+            for p in self.include_paths:
+                paths.append(p)
+
+        if self.lib_mappings:
+            # Check first entry of every lib mapping tuple.
+            for item in self.lib_mappings:
+                paths.append(item[0])
+
         for path in paths:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Path {path} not found.")
 
-    def setup(self):
-        self.validate_paths()
+        # Make sure the simulator binary exists.
         if not shutil.which(self.simulator_path):
             raise ValueError(f"Binary '{self.simulator_path}' not accessible.")
 

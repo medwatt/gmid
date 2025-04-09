@@ -1,24 +1,31 @@
 # imports <<<
 import os
 import pickle
-import tempfile
 import subprocess
+import tempfile
+
 import numpy as np
+
 from .base_simulator import BaseSimulator
+from .mosfet_simulation import MosfetSimulation
 from .parsers.hspice import import_export
+from .spice_mosfet_netlist_generator import SpiceMosfetNetlistGenerator
 # >>>
 
 class HspiceSimulator(BaseSimulator):
     def __init__(
         self,
-        simulator_path,
-        temperature,
-        model_paths,
-        parameters_to_save,
-        mos_spice_symbols,
+        temperature=27,
+        raw_spice=None,
+        lib_mappings=None,
+        include_paths=None,
+        simulator_path=None,
+        mos_spice_symbols=("m1", "m1"),
+        parameters_to_save=["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
     ):
-        super().__init__(simulator_path, temperature, model_paths, parameters_to_save)
+        super().__init__(simulator_path, temperature, include_paths, lib_mappings, parameters_to_save)
         self.mos_spice_symbols = mos_spice_symbols
+        self.raw_spice = raw_spice
         self.make_temp_files()
 
     def make_temp_files(self):
@@ -43,7 +50,6 @@ class HspiceSimulator(BaseSimulator):
 
         symbol = self.mos_spice_symbols[1]
         self.parameter_table = {
-            # parameter name : [name recognized by simulator, name used in the output file],
             "id": [
                 ".probe DC m_id = par('abs(i(vds))')",
                 "m_id"
@@ -94,11 +100,7 @@ class HspiceSimulator(BaseSimulator):
             ],
         }
 
-        self.parameter_table = {
-            k: v
-            for k, v in self.parameter_table.items()
-            if k in self.parameters_to_save
-        }
+        self.parameter_table = { k: v for k, v in self.parameter_table.items() if k in self.parameters_to_save }
 
         return [
             f".TEMP = {self.temperature}",
@@ -115,14 +117,13 @@ class HspiceSimulator(BaseSimulator):
 
         if verbose:
             cmd = f"{self.simulator_path} {self.input_file_path}"
-            with subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True) as p:
+            with subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  bufsize=1, universal_newlines=True) as p:
                 for line in p.stdout:
                     print(line, end='')
-
         else:
             cmd = f"{self.simulator_path} -i {self.input_file_path} -o {self.tmp_dir}"
             result = subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
             if result.returncode != 0:
                 with open(self.log_file_path, "r") as log_file:
                     log_contents = log_file.read()
@@ -141,3 +142,14 @@ class HspiceSimulator(BaseSimulator):
             if col_name in analysis.keys():
                 res = np.array(analysis[col_name]).T
                 lookup_table[transistor_type][p][length][vbs] = res
+
+    def prepare_simulation(self, model_sweeps, width):
+        netlist_gen = SpiceMosfetNetlistGenerator(
+            model_sweeps,
+            width,
+            self.mos_spice_symbols,
+            self.include_paths,
+            self.lib_mappings,
+            self.raw_spice,
+        )
+        return MosfetSimulation(self, netlist_gen, model_sweeps)

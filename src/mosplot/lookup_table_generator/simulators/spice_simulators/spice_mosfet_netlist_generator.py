@@ -1,4 +1,5 @@
-class MosfetNetlistGenerator:
+# ./lookup_table_generator/spice_mosfet_netlist_generator.py
+class SpiceMosfetNetlistGenerator:
     def __init__(self, model_sweeps, width, mos_spice_symbols, include_paths, lib_path_and_names, raw_spice):
         self.model_sweeps = model_sweeps  # Now mapping to TransistorSweep objects
         self.width = width
