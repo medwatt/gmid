@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="mosplot",
-    version="0.3.0",
+    version="0.4.0",
     description="Mosfet plotting and simulation package.",
     author="Mohamed Watfa",
     author_email="medwatt@hotmail.com",

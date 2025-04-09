@@ -1,15 +1,12 @@
 # imports <<<
 import os
 import pickle
-import subprocess
 import tempfile
 
 import numpy as np
 
 from .base_simulator import BaseSimulator
-from .mosfet_simulation import MosfetSimulation
 from .parsers.hspice import import_export
-from .spice_mosfet_netlist_generator import SpiceMosfetNetlistGenerator
 # >>>
 
 class HspiceSimulator(BaseSimulator):
@@ -19,14 +16,19 @@ class HspiceSimulator(BaseSimulator):
         raw_spice=None,
         lib_mappings=None,
         include_paths=None,
-        simulator_path=None,
+        simulator_path="hspice",
         mos_spice_symbols=("m1", "m1"),
         parameters_to_save=["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
     ):
-        super().__init__(simulator_path, temperature, include_paths, lib_mappings, parameters_to_save)
-        self.mos_spice_symbols = mos_spice_symbols
-        self.raw_spice = raw_spice
-        self.make_temp_files()
+        super().__init__(
+                raw_spice=raw_spice,
+                temperature=temperature,
+                lib_mappings=lib_mappings,
+                include_paths=include_paths,
+                simulator_path=simulator_path,
+                mos_spice_symbols=mos_spice_symbols,
+                parameters_to_save=parameters_to_save,
+        )
 
     def make_temp_files(self):
         self.tmp_dir = tempfile.mkdtemp()
@@ -34,6 +36,11 @@ class HspiceSimulator(BaseSimulator):
         self.log_file_path = os.path.join(self.tmp_dir, "input.lis")
         self.output_file_path = os.path.join(self.tmp_dir, "input.sw0")
         self.decoded_output_path = os.path.join(self.tmp_dir, "input_sw0.pickle")
+
+    def build_simulation_command(self, verbose):
+        if verbose:
+            return f"{self.simulator_path} {self.input_file_path}"
+        return f"{self.simulator_path} -i {self.input_file_path} -o {self.tmp_dir}"
 
     def setup_op_simulation(self, vgs, vds):
         return [
@@ -44,10 +51,6 @@ class HspiceSimulator(BaseSimulator):
         ]
 
     def setup_dc_simulation(self, vgs, vds):
-        vgs_start, vgs_stop, vgs_step = vgs
-        vds_start, vds_stop, vds_step = vds
-        analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
-
         symbol = self.mos_spice_symbols[1]
         self.parameter_table = {
             "id": [
@@ -99,9 +102,10 @@ class HspiceSimulator(BaseSimulator):
                 "m_css",
             ],
         }
-
         self.parameter_table = { k: v for k, v in self.parameter_table.items() if k in self.parameters_to_save }
-
+        vgs_start, vgs_stop, vgs_step = vgs
+        vds_start, vds_stop, vds_step = vds
+        analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
         return [
             f".TEMP = {self.temperature}",
             ".options probe dccap brief accurate",
@@ -111,30 +115,20 @@ class HspiceSimulator(BaseSimulator):
             ".end",
         ]
 
-    def run_simulation(self, netlist, verbose=False):
-        with open(self.input_file_path, "w") as f:
-            f.write("\n".join(netlist))
-
-        if verbose:
-            cmd = f"{self.simulator_path} {self.input_file_path}"
-            with subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  bufsize=1, universal_newlines=True) as p:
-                for line in p.stdout:
-                    print(line, end='')
-        else:
-            cmd = f"{self.simulator_path} -i {self.input_file_path} -o {self.tmp_dir}"
-            result = subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if result.returncode != 0:
-                with open(self.log_file_path, "r") as log_file:
-                    log_contents = log_file.read()
-                self.remove_temp_files()
-                raise Exception(f"Simulation error: {log_contents}")
-
     def parse_output(self):
         import_export(self.output_file_path, "pickle")
         with open(self.decoded_output_path, "rb") as file:
             loaded_data = pickle.load(file)
         return loaded_data
+
+    def extract_parameters(self, analysis, n_vgs, n_vds):
+        results = {}
+        for p in self.parameters_to_save:
+            col_name = self.parameter_table[p][1]
+            if col_name in analysis.keys():
+                res = np.array(analysis[col_name]).T
+                results[p] = res
+        return results
 
     def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
         for p in self.parameters_to_save:
@@ -143,13 +137,3 @@ class HspiceSimulator(BaseSimulator):
                 res = np.array(analysis[col_name]).T
                 lookup_table[transistor_type][p][length][vbs] = res
 
-    def prepare_simulation(self, model_sweeps, width):
-        netlist_gen = SpiceMosfetNetlistGenerator(
-            model_sweeps,
-            width,
-            self.mos_spice_symbols,
-            self.include_paths,
-            self.lib_mappings,
-            self.raw_spice,
-        )
-        return MosfetSimulation(self, netlist_gen, model_sweeps)

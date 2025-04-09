@@ -37,57 +37,110 @@ pip install .
 
 ## Generating a Lookup Table
 
-Before plotting, create a lookup table with all the MOSFET parameters. For example:
+Before plotting, create a lookup table with all the MOSFET parameters. This is
+done in three steps.
+
+### Simulation Definition
+
+An example of how to create an ngspice/hspice simulator instance is shown
+below.
+
+```python
+from mosplot.lookup_table_generator.simulators import NgspiceSimulator, HspiceSimulator
+
+# One of `include_paths` or `lib_mappings` must be specified.
+# The rest are optional.
+
+ngspice = NgspiceSimulator(
+    # Provide path to simulator if simulator is not in system path.
+    simulator_path="ngspice",
+
+    # Default simulation temperature. Override if needed.
+    temperature=27,
+
+    # All parameters are saved by default. Override if needed.
+    parameters_to_save=["id", "vth", "vdsat", "gm"],
+
+    # Files to include with `.INCLUDE`.
+    include_paths=[
+        "./NMOS_VTH.inc",
+        "./PMOS_VTH.inc"
+    ],
+
+    # Files to include with `.LIB`.
+    lib_mappings = [
+        ("/tools/pdk/models/hspice/models/design_wrapper.lib", "tt_pre")
+    ],
+
+    # If the transistor is defined inside a subcircuit in
+    # the library files, you must specify the symbol used (first entry)
+    # and the hierarchical name (second entry). Override if needed.
+    mos_spice_symbols = ("x1", "x1.main"),
+
+    # Additional spice code that may be needed for the simulation.
+    raw_spice = [
+        "line 1",
+        "line 2",
+    ]
+)
+```
+
+### Sweep Parameters
+
+Specify the sweep ranges for the transistors.
+
+```python
+from mosplot.lookup_table_generator import TransistorSweep
+
+# Define a sweep object for NMOS transistors.
+nmos_sweep = TransistorSweep(
+    vgs=(0, 1.0, 0.01),
+    vds=(0, 1.0, 0.01),
+    vbs=(0, -1.0, -0.1),
+    length=[45e-9, 100e-9]
+)
+
+# Define a sweep object for PMOS transistors.
+pmos_sweep = TransistorSweep(
+    vgs=(0, -1.0, -0.01),
+    vds=(0, -1.0, -0.01),
+    vbs=(0, 1.0, 0.1),
+    length=[200e-9, 500e-9]
+)
+```
+
+### Lookup Table Builder Setup
+
+Now that we have the `ngspice` simulator object and `nmos_sweep` and
+`pmos_sweep` objects, we can generate the lookup table.
 
 ```python
 from mosplot.lookup_table_generator import LookupTableGenerator
 
 obj = LookupTableGenerator(
-    description="freepdk_45nm",
+    description="freepdk 45nm",
 
-    # Simulator to use
-    simulator="ngspice", # "ngspice" or "hspice"
+    # Pass the simulator object
+    simulator=ngspice,
 
-    # Provide path to simulator if not in system path.
-    # simulator_path="/usr/bin/ngspice",
-
-    # Files to include with `.INCLUDE`.
-    include_paths=[
-        "/home/username/gmid/models/NMOS_VTH.lib",
-        "/home/username/gmid/models/PMOS_VTH.lib",
-    ],
-
-    # Names of models to simulate.
-    # You must specify  specify the type ("nmos" or "pmos").
+    # Pass the sweep object, specifying the models they apply to.
     model_sweeps={
-        "NMOS_VTH": "nmos",
-        "PMOS_VTH": "pmos",
+        "NMOS_VTH": nmos_sweep,
+        "PMOS_VTH": pmos_sweep,
     },
 
-    # Symbols for detecting the transistor:
-    mos_spice_symbols = ("m1", "m1"),
-
-    # If the transistor id defined inside a subcircuit in
-    # the library files, you must specify the symbol used and
-    # the hierarchical name. For example:
-    # mos_spice_symbols = ("x1", "x1.main"),
-
-    # Fixed width for all simulations.
+    # Specify the width to use. Override if needed.
     width=10e-6,
 
-    # Voltage sweep parameters.
-    vsb=(0, 1.0, 0.1),
-    vgs=(0, 1.0, 0.01),
-    vds=(0, 1.0, 0.01),
-
-    # Length sweep parameters.
-    length=[50e-9, 100e-9, 200e-9, 400e-9, 800e-9, 1.6e-6, 3.2e-6, 6.4e-6],
+    # Specify the number of processes to use to build the table faster.
+    # Note: Seems to work well with hspice, but not with ngspice.
+    n_process=1,
 )
 
 # Optionally, run an op simulation to check outputs.
 # obj.op_simulation()
 
-# Build and store the table
+# Build and store the table.
 obj.build("./freepdk_45nm")
 ```
 
@@ -112,7 +165,7 @@ The lookup table is just a Python dictionary:
 ```python
 print(lookup_table.keys())
 
-dict_keys(['nch_lvt', 'pch_lvt', 'width', 'length', 'description', 'simulator', 'parameter_names'])
+dict_keys(['nch_lvt', 'pch_lvt', 'width', 'description', 'simulator', 'parameter_names'])
 ```
 
 
@@ -121,11 +174,11 @@ dict_keys(['nch_lvt', 'pch_lvt', 'width', 'length', 'description', 'simulator', 
 Create a MOSFET instance:
 
 ```python
-nmos = Mosfet(lookup_table=lookup_table, mos="nch_lvt", vsb=0.0, vds=0.6, vgs=(0.01, 1.10))
-pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vsb=0.0, vds=-0.6, vgs=(-1.2, -0.01))
+nmos = Mosfet(lookup_table=lookup_table, mos="nch_lvt", vbs=0.0, vds=0.6, vgs=(0.01, 1.10))
+pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vbs=0.0, vds=-0.6, vgs=(-1.2, -0.01))
 ```
 
-For the `nmos`, the above code filters the lookup table at `vsb=0.0` and
+For the `nmos`, the above code filters the lookup table at `vbs=0.0` and
 `vds=0.6` for `vgs` values between `0.01` and `1.2`. Since the length
 is not specified, all lengths in the lookup table are used.
 
@@ -164,7 +217,7 @@ Some common expressions include:
 
 - `vds_expression`
 
-- `vsb_expression`
+- `vbs_expression`
 
 - `gain_expression`
 
@@ -238,7 +291,7 @@ To look up an expression without interpolation:
 ```python
 x = nmos.lookup_expression_from_table(
     length=65e-9,
-    vsb = 0,
+    vbs = 0,
     vds = (0.0, 1.2, 0.01),
     vgs = (0.0, 1.2, 0.2),
     primary="vds",
@@ -262,7 +315,7 @@ To plot the input characteristic of the `nmos`:
 ```python
 nmos.plot_by_sweep(
     length=nmos.length[:-1:4],
-    vsb = 0,
+    vbs = 0,
     vds = 0.6,
     vgs = (0.01, 1.2, 0.01),
     x_expression = nmos.vgs_expression,
@@ -281,7 +334,7 @@ To plot the output characteristic of the `nmos`:
 ```python
 nmos.plot_by_sweep(
     length=65e-9,
-    vsb = 0,
+    vbs = 0,
     vds = (0.0, 1.2, 0.01),
     vgs = (0.0, 1.2, 0.2),
     x_expression = nmos.vds_expression,
@@ -300,7 +353,7 @@ To plot the dependence of transistor speed and gain on the `length`:
 ```python
 nmos.plot_by_sweep(
     length=nmos.length[1:],
-    vsb = 0,
+    vbs = 0,
     vds = 1.2,
     vgs = (0.4, 1.2, 0.25),
     x_expression = nmos.length_expression,
@@ -325,7 +378,7 @@ Get the data points:
 ```python
 vdsat, vov, vstar = nmos.lookup_expression_from_table(
     length=100e-9,
-    vsb=0,
+    vbs=0,
     vds=0.6,
     vgs=(0.01, 1.2, 0.01),
     primary="vgs",
