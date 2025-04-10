@@ -20,7 +20,6 @@ def tile_arrays(A: npt.NDArray, B: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArra
 
 def extract_2d_table(
     lookup_table: dict,
-    width: float,
     length: Optional[Union[float, list, npt.NDArray]] = None,
     vbs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
     vgs: Optional[Union[float, Tuple[float, float], Tuple[float, float, float]]] = None,
@@ -139,21 +138,28 @@ def extract_2d_table(
             "vds": values_dict["vds"],
     }
 
-    extracted_table: dict = {}
+
     if parameters is None:
         parameters = lookup_table.get("parameter_names", [])
-    for p in parameters:
-        if p in lookup_table:
-            data = np.squeeze(apply_slice(lookup_table[p], slice_indices))
-            if data.ndim > 1 and data.shape[0] > data.shape[1]:
-                data = data.T
-            extracted_table[p] = data
 
-    key = next(iter(extracted_table))
-    extracted_table["width"] = np.array(width)
-    extracted_table["length"], _ = tile_arrays(values_dict["length"], extracted_table[key])
-    extracted_table["vbs"], _ = tile_arrays(values_dict["vbs"], extracted_table[key])
-    extracted_table["vgs"], _ = tile_arrays(values_dict["vgs"], extracted_table[key])
-    extracted_table["vds"], _ = tile_arrays(values_dict["vds"], extracted_table[key])
+    # Precompute keys with 4D data.
+    keys_4d = [p for p in parameters if p in lookup_table and lookup_table[p].ndim == 4]
+    if not keys_4d:
+        raise ValueError("No parameter with 4 dimensions found for tiling.")
+    reference_key = keys_4d[0]
+
+    extracted_table = {}
+    for p in parameters:
+        if p not in lookup_table:
+            continue
+        data = lookup_table[p]
+        if p in keys_4d:
+            data = np.squeeze(apply_slice(data, slice_indices))
+        if data.ndim > 1 and data.shape[0] > data.shape[1]:
+            data = data.T
+        extracted_table[p] = data
+
+    for var in ["length", "vbs", "vgs", "vds"]:
+        extracted_table[var], _ = tile_arrays(values_dict[var], extracted_table[reference_key])
 
     return secondary, filter_values, extracted_table

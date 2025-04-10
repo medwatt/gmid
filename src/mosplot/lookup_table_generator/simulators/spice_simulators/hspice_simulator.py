@@ -14,9 +14,11 @@ class HspiceSimulator(BaseSimulator):
         self,
         temperature=27,
         raw_spice=None,
+        hdl_paths=None,
         lib_mappings=None,
         include_paths=None,
         simulator_path="hspice",
+        device_parameters={"w": 10e-6},
         mos_spice_symbols=("m1", "m1"),
         parameters_to_save=["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
     ):
@@ -27,8 +29,11 @@ class HspiceSimulator(BaseSimulator):
                 include_paths=include_paths,
                 simulator_path=simulator_path,
                 mos_spice_symbols=mos_spice_symbols,
+                device_parameters=device_parameters,
                 parameters_to_save=parameters_to_save,
         )
+        self.hdl_paths = hdl_paths
+        self._init_config["hdl_paths"] = hdl_paths
 
     def make_temp_files(self):
         self.tmp_dir = tempfile.mkdtemp()
@@ -43,7 +48,11 @@ class HspiceSimulator(BaseSimulator):
         return f"{self.simulator_path} -i {self.input_file_path} -o {self.tmp_dir}"
 
     def setup_op_simulation(self, vgs, vds):
+        hdl = None
+        if self.hdl_paths:
+            hdl = "\n".join([f".hdl {p}" for p in self.hdl_paths])
         return [
+            hdl,
             f".TEMP = {self.temperature}",
             ".option POST=2",
             ".op",
@@ -106,7 +115,11 @@ class HspiceSimulator(BaseSimulator):
         vgs_start, vgs_stop, vgs_step = vgs
         vds_start, vds_stop, vds_step = vds
         analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
+        hdl = None
+        if self.hdl_paths:
+            hdl = "\n".join([f".hdl {p}" for p in self.hdl_paths])
         return [
+            hdl,
             f".TEMP = {self.temperature}",
             ".options probe dccap brief accurate",
             ".option POST=2",

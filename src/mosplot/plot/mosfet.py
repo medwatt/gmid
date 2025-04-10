@@ -50,13 +50,13 @@ class Mosfet:
     ) -> None:
         self.mos = mos
         self.lookup_table = lookup_table[mos]
-        self.width = self.lookup_table["width"]
         self.length_all = self.lookup_table["length"]
         self.parameters = self.lookup_table["parameter_names"]
+        self.device_parameters = self.lookup_table["device_parameters"]
+        self.width = self.compute_device_width()
 
         self.secondary_var, self.filtered_variables, self.extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
-            width=self.width,
             length=length,
             vbs=vbs,
             vgs=vgs,
@@ -75,7 +75,6 @@ class Mosfet:
         self.vds_expression     = Expression(variables=["vds"],     label="$V_{\\mathrm{DS}}\\ (V)$")
         self.id_expression      = Expression(variables=["id"],      label="$I_{D}\\ (A)$")
         self.vth_expression     = Expression(variables=["vth"],     label="$V_{\\mathrm{TH}}\\ (V)$")
-        self.vdsat_expression   = Expression(variables=["vdsat"],   label="$V_{\\mathrm{DS_{\\mathrm{SAT}}}}\\ (V)$")
         self.gm_expression      = Expression(variables=["gm"],      label="$g_{m}\\ (S)$")
         self.gmbs_expression    = Expression(variables=["gmbs"],    label="$g_{\\mathrm{mbs}}\\ (S)$")
         self.gds_expression     = Expression(variables=["gds"],     label="$g_{\\mathrm{ds}}\\ (S)$")
@@ -85,7 +84,28 @@ class Mosfet:
         self.cgd_expression     = Expression(variables=["cgd"],     label="$c_{\\mathrm{gd}}\\ (F)$")
         self.cdd_expression     = Expression(variables=["cdd"],     label="$c_{\\mathrm{dd}}\\ (F)$")
 
+        # Some models use vdssat instead of vdsat.
+        if "vdssat" in self.parameters:
+            self.vdsat_expression   = Expression(variables=["vdssat"],   label="$V_{\\mathrm{DS_{\\mathrm{SAT}}}}\\ (V)$")
+        else:
+            self.vdsat_expression   = Expression(variables=["vdsat"],   label="$V_{\\mathrm{DS_{\\mathrm{SAT}}}}\\ (V)$")
+
         # Initialize computed expressions.
+        self.vsg_expression = Expression(
+            variables=["vgs"],
+            function=lambda x: -x,
+            label="$V_{\\mathrm{SG}}\\ (V)$"
+        )
+        self.vsb_expression = Expression(
+            variables=["vbs"],
+            function=lambda x: -x,
+            label="$V_{\\mathrm{SB}}\\ (V)$"
+        )
+        self.vsd_expression = Expression(
+            variables=["vds"],
+            function=lambda x: -x,
+            label="$V_{\\mathrm{SD}}\\ (V)$"
+        )
         self.gmid_expression = Expression(
             variables=["gm", "id"],
             function=lambda x, y: x / y,
@@ -101,15 +121,15 @@ class Mosfet:
             function=lambda x, y: (2 * y) / x,
             label="$V^{\\star}\\ (V)$"
         )
+        self.current_density_expression = Expression(
+            variables=["id"],
+            function=lambda x: x / self.width,
+            label="$I_{D}/W\\ (A/m)$"
+        )
         self.gain_expression = Expression(
             variables=["gm", "gds"],
             function=lambda x, y: x / y,
             label="$g_{m}/g_{\\mathrm{ds}}$"
-        )
-        self.current_density_expression = Expression(
-            variables=["id", "width"],
-            function=lambda x, y: x / y,
-            label="$I_{D}/W\\ (A/m)$"
         )
         self.transist_frequency_expression = Expression(
             variables=["gm", "cgg"],
@@ -126,6 +146,19 @@ class Mosfet:
             function=lambda x: 1 / x,
             label="$r_{\\mathrm{ds}}\\ (\\Omega)$"
         )
+
+    # TODO: I need to test this more to account for all cases.
+    def compute_device_width(self):
+        if "w" in self.device_parameters:
+            return self.device_parameters["w"]
+
+        elif "weff" in self.parameters:
+            if "nf" in self.device_parameters:
+                return self.lookup_table["weff"] * self.device_parameters["nf"]
+            else:
+                return self.lookup_table["weff"]
+
+        raise ValueError("Device width could not be computed.")
     # >>>
 
     # calculate from expression <<<
@@ -339,7 +372,6 @@ class Mosfet:
         """
         secondary_var, filtered_vars, extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
-            width=self.width,
             length=length,
             vbs=vbs,
             vgs=vgs,
@@ -547,7 +579,6 @@ class Mosfet:
         """
         _, _, extracted_table = extract_2d_table(
             lookup_table=self.lookup_table,
-            width=self.width,
             length=length,
             vbs=vbs,
             vgs=vgs,

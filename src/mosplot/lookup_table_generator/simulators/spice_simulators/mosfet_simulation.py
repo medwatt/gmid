@@ -2,6 +2,7 @@
 import numpy as np
 from multiprocessing import Process, Queue
 from .spice_mosfet_netlist_generator import SpiceMosfetNetlistGenerator
+from .utils import list_to_string
 # >>>
 
 # worker <<<
@@ -40,7 +41,7 @@ def worker(job_queue, result_queue, simulator, netlist_gen):
 # >>>
 
 class MosfetSimulation:
-    def __init__(self, simulator, model_sweeps, width, n_process):
+    def __init__(self, simulator, model_sweeps, n_process):
         """
         simulator   : instance of HspiceSimulator or NgspiceSimulator.
         model_sweeps: dict mapping transistor names to TransistorSweep objects.
@@ -49,13 +50,12 @@ class MosfetSimulation:
         """
         self.simulator = simulator
         self.sweeps = model_sweeps
-        self.width = width
         self.n_process = n_process
 
         # Create a netlist generator.
         self.netlist_generator = SpiceMosfetNetlistGenerator(
             model_sweeps,
-            width,
+            simulator.device_parameters,
             simulator.mos_spice_symbols,
             simulator.include_paths,
             simulator.lib_mappings,
@@ -93,16 +93,15 @@ class MosfetSimulation:
         full_netlist = netlist + sim_setup
         return full_netlist
 
-    def print_netlist(self):
+    def print_netlist(self, netlist=None):
         """
         Print a sample netlist.
         """
-        self.simulator.make_temp_files()
-        netlist = self.get_single_netlist(sim_type="dc")
+        if netlist is None:
+            netlist = self.get_single_netlist(sim_type="dc")
         print("----- Sample Netlist -----")
-        print("\n".join(netlist))
+        print(list_to_string(netlist))
         print("--------------------------")
-        self.simulator.remove_temp_files()
 
     def op_simulation(self):
         """
@@ -110,6 +109,7 @@ class MosfetSimulation:
         """
         self.simulator.make_temp_files()
         netlist = self.get_single_netlist(sim_type="op")
+        self.print_netlist(netlist)
         self.simulator.run_simulation(netlist, verbose=True)
         self.simulator.remove_temp_files()
 
@@ -127,6 +127,7 @@ class MosfetSimulation:
             for l_idx, length in enumerate(sweep.length):
                 for vbs_idx, vbs_val in enumerate(vbs_values):
                     jobs.append((transistor_name, l_idx, vbs_idx, length, vbs_val, sweep, n_vgs, n_vds))
+        self.print_netlist()
         total_jobs = len(jobs)
         print(f"Total simulation jobs: {total_jobs}")
 

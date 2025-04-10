@@ -4,16 +4,18 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from typing import List
+from .utils import list_to_string
 # >>>
 
 class BaseSimulator(ABC):
-    def __init__(self, *, simulator_path, include_paths, lib_mappings, raw_spice,  mos_spice_symbols, parameters_to_save, temperature):
+    def __init__(self, *, device_parameters, simulator_path, include_paths, lib_mappings, raw_spice,  mos_spice_symbols, parameters_to_save, temperature):
         self.raw_spice = raw_spice
         self.temperature = temperature
         self.lib_mappings = lib_mappings
         self.include_paths = include_paths
         self.simulator_path = simulator_path
         self.mos_spice_symbols = mos_spice_symbols
+        self.device_parameters = device_parameters
         self.parameters_to_save = parameters_to_save
         self.tmp_dir = None
         self._init_config = {
@@ -23,13 +25,14 @@ class BaseSimulator(ABC):
             "include_paths": include_paths,
             "simulator_path": simulator_path,
             "mos_spice_symbols": mos_spice_symbols,
+            "device_parameters": device_parameters,
             "parameters_to_save": parameters_to_save,
         }
         self.validate_paths()
-        self.tmp_dir = ""
-        self.input_file_path = ""
-        self.output_file_path = ""
-        self.log_file_path = ""
+        self.tmp_dir = "/tmp/"
+        self.input_file_path = "input"
+        self.output_file_path = "output"
+        self.log_file_path = "log"
 
     @abstractmethod
     def make_temp_files(self) -> None:
@@ -82,7 +85,7 @@ class BaseSimulator(ABC):
 
     def run_simulation(self, netlist, verbose=False):
         with open(self.input_file_path, "w") as f:
-            f.write("\n".join(netlist))
+            f.write(list_to_string(netlist))
         cmd = self.build_simulation_command(verbose)
         if verbose:
             with subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True) as proc:

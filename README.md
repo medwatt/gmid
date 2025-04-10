@@ -82,6 +82,13 @@ ngspice = NgspiceSimulator(
         "line 1",
         "line 2",
     ]
+
+    # Specify the width. For devices that do not take a width,
+    # you can specify other parameters such as the number of fingers.
+    # The keys are exactly those recognized by the model.
+    device_parameters = {
+        "w": 10e-6,
+    }
 )
 ```
 
@@ -128,9 +135,6 @@ obj = LookupTableGenerator(
         "NMOS_VTH": nmos_sweep,
         "PMOS_VTH": pmos_sweep,
     },
-
-    # Specify the width to use. Override if needed.
-    width=10e-6,
 
     # Specify the number of processes to use to build the table faster.
     # Note: Seems to work well with hspice, but not with ngspice.

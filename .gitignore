@@ -6,4 +6,6 @@ eggs/
 .installed.cfg
 *.egg
 *.npy
+*.npz
+*.osdi
 

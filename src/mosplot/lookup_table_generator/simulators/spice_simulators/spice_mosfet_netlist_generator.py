@@ -1,8 +1,8 @@
 class SpiceMosfetNetlistGenerator:
-    def __init__(self, model_sweeps, width, mos_spice_symbols, include_paths, lib_path_and_names, raw_spice):
+    def __init__(self, model_sweeps, device_parameters, mos_spice_symbols, include_paths, lib_path_and_names, raw_spice):
         self.model_sweeps = model_sweeps
-        self.width = width
         self.raw_spice = raw_spice
+        self.device_parameters = device_parameters
         self.mos_spice_symbols = mos_spice_symbols
         self.include_paths = include_paths
         self.lib_path_and_names = lib_path_and_names
@@ -25,12 +25,12 @@ class SpiceMosfetNetlistGenerator:
             netlist.append(include_str)
         if lib_str:
             netlist.append(lib_str)
-        parameters = f"w={self.width} l={length}"
+        parameters = " ".join(f"{key}={value}" for key, value in self.device_parameters.items())
         netlist.extend([
             "VGS NG 0 DC=0",
             f"VBS NB 0 DC={vbs}",
             "VDS ND 0 DC=0",
-            f"{self.mos_spice_symbols[0]} ND NG 0 NB {mosfet_model} {parameters}",
+            f"{self.mos_spice_symbols[0]} ND NG 0 NB {mosfet_model} L={length} {parameters}",
         ])
         if self.raw_spice:
             netlist.extend(self.raw_spice)
