@@ -210,7 +210,7 @@ class Mosfet:
         legend_values = np.array(sec_values)[indices]
         legend_title_mapping = {
             "length": "Length",
-            "vbs": "$V_{\\mathrm{SB}}$",
+            "vbs": "$V_{\\mathrm{BS}}$",
             "vgs": "$V_{\\mathrm{GS}}$",
             "vds": "$V_{\\mathrm{DS}}$"
         }
@@ -355,7 +355,7 @@ class Mosfet:
             legend = [sw for sw in filtered_vars[secondary_var]]
             legend_title_mapping = {
                 "length": "Length",
-                "vbs": "$V_{\\mathrm{SB}}$",
+                "vbs": "$V_{\\mathrm{BS}}$",
                 "vgs": "$V_{\\mathrm{GS}}$",
                 "vds": "$V_{\\mathrm{DS}}$"
             }

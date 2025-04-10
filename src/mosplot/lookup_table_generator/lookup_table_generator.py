@@ -32,8 +32,8 @@ class LookupTableGenerator:
 
     def build(self, filepath):
         def range_args(tup):
-            start, stop, step = tup
-            return (start, stop + step, step)
+            n = int(round((tup[1] - tup[0]) / tup[2])) + 1
+            return np.linspace(tup[0], tup[1], n)
 
         # Create MosfetSimulation instance.
         simulation = MosfetSimulation(
@@ -56,9 +56,9 @@ class LookupTableGenerator:
         self.lookup_table["simulator"] = self.simulator.__class__.__name__
         self.lookup_table["parameter_names"] = self.simulator.parameters_to_save
         for transistor_name, sweep in self.model_sweeps.items():
-            self.lookup_table[transistor_name]["vgs"] = np.arange(*range_args(sweep.vgs))
-            self.lookup_table[transistor_name]["vds"] = np.arange(*range_args(sweep.vds))
-            self.lookup_table[transistor_name]["vbs"] = np.arange(*range_args(sweep.vbs))
+            self.lookup_table[transistor_name]["vgs"] = range_args(sweep.vgs)
+            self.lookup_table[transistor_name]["vds"] = range_args(sweep.vds)
+            self.lookup_table[transistor_name]["vbs"] = range_args(sweep.vbs)
             self.lookup_table[transistor_name]["length"] = np.array(sweep.length)
             self.lookup_table[transistor_name]["width"] = self.width
             self.lookup_table[transistor_name]["model_name"] = transistor_name

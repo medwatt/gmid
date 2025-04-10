@@ -32,22 +32,59 @@ def extract_2d_table(
     if sum(param is not None for param in [length, vbs, vgs, vds]) < 2:
         raise ValueError("Provide at least two parameters.")
 
-    # Process a sweep target and return (indices, values, is_scalar).
-    def process_target(
-        data: npt.NDArray, target: any, var_name: str
-    ) -> Tuple[Union[np.ndarray, slice], Any, bool]:
+    def process_target(data: np.ndarray, target, var_name: str):
         if isinstance(target, tuple):
-            start, end = target[0], target[1]
-            inds = np.where((data >= start) & (data <= end))[0]
+
+            if len(target) < 2:
+                raise ValueError("Target tuple must have at least start and stop values.")
+
+            start_val, stop_val = target[0], target[1]
+            ascending = start_val <= stop_val
+
+            # Find the indices in data closest to start and stop.
+            start_idx = int(np.abs(data - start_val).argmin())
+            stop_idx = int(np.abs(data - stop_val).argmin())
+
+            # Ensure indices are in the correct order.
+            if ascending and start_idx > stop_idx:
+                start_idx, stop_idx = stop_idx, start_idx
+            elif not ascending and start_idx < stop_idx:
+                start_idx, stop_idx = stop_idx, start_idx
+
+            # Build a continuous index sequence that includes both start and stop.
+            if ascending:
+                inds = np.arange(start_idx, stop_idx + 1)
+            else:
+                inds = np.arange(start_idx, stop_idx - 1, -1)
+
+            # If a step is specified, sample every step element.
             if len(target) == 3:
-                step = int(target[2] / (data[1] - data[0]))
-                inds = inds[::step]
+                step_val = target[2]
+
+                if len(data) < 2:
+                    raise ValueError("Data must have at least two elements to determine spacing.")
+
+                # Assume uniform spacing.
+                dx = data[1] - data[0] if data[0] <= data[-1] else data[-2] - data[-1]
+                index_step = int(round(abs(step_val) / dx))
+                if index_step == 0:
+                    raise ValueError("Step value is too small compared to data spacing.")
+                step_idx = index_step if ascending else -index_step
+                sliced_inds = inds[::step_idx]
+
+                # Always include the final element.
+                if sliced_inds[-1] != inds[-1]:
+                    sliced_inds = np.concatenate((sliced_inds, [inds[-1]]))
+                inds = sliced_inds
+
             return inds, data[inds], False
+
         if var_name == "length" and isinstance(target, (list, np.ndarray)):
             target_arr = np.array(target)
             mask = np.isin(data, target_arr)
             inds = np.nonzero(mask)[0]
             return inds, data[inds], False
+
         idx = int(np.abs(data - target).argmin())
         return np.array([idx]), data[idx], True
 
