@@ -43,10 +43,10 @@ class NgspiceSimulator(BaseSimulator):
 
     def build_simulation_command(self, verbose):
         if verbose:
-            return f"{self.simulator_path} -b {self.input_file_path}"
-        return f"{self.simulator_path} -b -o {self.log_file_path} {self.input_file_path}"
+            return [self.simulator_path, "-b", self.input_file_path]
+        return [self.simulator_path, "-b", "-o", self.log_file_path, self.input_file_path]
 
-    def setup_op_simulation(self, vgs, vds):
+    def setup_op_simulation(self, sweep):
         osdi = None
         if self.osdi_paths:
             osdi = "\n".join([f"pre_osdi {p}" for p in self.osdi_paths])
@@ -61,7 +61,7 @@ class NgspiceSimulator(BaseSimulator):
             ".end",
         ]
 
-    def setup_dc_simulation(self, vgs, vds):
+    def setup_dc_simulation(self, sweep):
         symbol = self.mos_spice_symbols[1]
         self.parameter_table = {
             "id":     ["save i(vds)",             "i(i_vds)"],
@@ -79,12 +79,13 @@ class NgspiceSimulator(BaseSimulator):
             "cdd":    [f"save @{symbol}[cdd]",    f"@{symbol}[cdd]"],
         }
         self.parameter_table = { k: v for k, v in self.parameter_table.items() if k in self.parameters_to_save }
-        vgs_start, vgs_stop, vgs_step = vgs
-        vds_start, vds_stop, vds_step = vds
+        vgs_start, vgs_stop, vgs_step = sweep.vgs
+        vds_start, vds_stop, vds_step = sweep.vds
         analysis_string = f"dc VDS {vds_start} {vds_stop} {vds_step} VGS {vgs_start} {vgs_stop} {vgs_step}"
         osdi = None
         if self.osdi_paths:
             osdi = "\n".join([f"pre_osdi {p}" for p in self.osdi_paths])
+        polarity = "-" if sweep.mos_type == "nmos" else ""
         return [
             f".options TEMP = {self.temperature}",
             f".options TNOM = {self.temperature}",
@@ -92,7 +93,7 @@ class NgspiceSimulator(BaseSimulator):
             osdi,
             "\n".join([val[0] for val in self.parameter_table.values()]),
             analysis_string,
-            "let i_vds = abs(i(vds))",
+            f"let i_vds = {polarity}i(vds)",
             f"write {self.output_file_path} all",
             ".endc",
             ".end",

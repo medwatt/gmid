@@ -1,8 +1,11 @@
 # imports <<<
 import os
+
 import numpy as np
+
 from .simulators.spice_simulators.mosfet_simulation import MosfetSimulation
 from .table_cleanup import LookupTableCleaner
+
 # >>>
 
 class LookupTableGenerator:

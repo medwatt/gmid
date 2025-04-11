@@ -39,15 +39,15 @@ class BaseSimulator(ABC):
         pass
 
     @abstractmethod
-    def build_simulation_command(self, verbose) -> str:
+    def build_simulation_command(self, verbose) -> List:
         pass
 
     @abstractmethod
-    def setup_op_simulation(self, vgs, vds) -> List:
+    def setup_op_simulation(self, sweep) -> List:
         return []
 
     @abstractmethod
-    def setup_dc_simulation(self, vgs, vds) -> List:
+    def setup_dc_simulation(self, sweep) -> List:
         pass
 
     @abstractmethod
@@ -83,16 +83,23 @@ class BaseSimulator(ABC):
         if not shutil.which(self.simulator_path):
             raise ValueError(f"Binary '{self.simulator_path}' not accessible.")
 
+
     def run_simulation(self, netlist, verbose=False):
+        # Write the netlist to the input file.
         with open(self.input_file_path, "w") as f:
             f.write(list_to_string(netlist))
+
+        # Build the command as a list of arguments.
         cmd = self.build_simulation_command(verbose)
+
         if verbose:
-            with subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True) as proc:
+            # Run process and print the output directly.
+            with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True) as proc:
                 for line in proc.stdout:
                     print(line, end="")
         else:
-            result = subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Run the process without printing output.
+            result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if result.returncode != 0:
                 with open(self.log_file_path, "r") as log_file:
                     log_contents = log_file.read()

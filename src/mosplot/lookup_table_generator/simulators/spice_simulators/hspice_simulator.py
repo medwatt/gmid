@@ -44,10 +44,10 @@ class HspiceSimulator(BaseSimulator):
 
     def build_simulation_command(self, verbose):
         if verbose:
-            return f"{self.simulator_path} {self.input_file_path}"
-        return f"{self.simulator_path} -i {self.input_file_path} -o {self.tmp_dir}"
+            return [self.simulator_path, self.input_file_path]
+        return [self.simulator_path, "-i", self.input_file_path, "-o", self.tmp_dir]
 
-    def setup_op_simulation(self, vgs, vds):
+    def setup_op_simulation(self, sweep):
         hdl = None
         if self.hdl_paths:
             hdl = "\n".join([f".hdl {p}" for p in self.hdl_paths])
@@ -59,11 +59,12 @@ class HspiceSimulator(BaseSimulator):
             ".end",
         ]
 
-    def setup_dc_simulation(self, vgs, vds):
+    def setup_dc_simulation(self, sweep):
         symbol = self.mos_spice_symbols[1]
+        polarity = "-" if sweep.mos_type == "nmos" else ""
         self.parameter_table = {
             "id": [
-                ".probe DC m_id = par('abs(i(vds))')",
+                f".probe DC m_id = par('{polarity}i(vds)')",
                 "m_id"
             ],
             "vth": [
@@ -112,8 +113,8 @@ class HspiceSimulator(BaseSimulator):
             ],
         }
         self.parameter_table = { k: v for k, v in self.parameter_table.items() if k in self.parameters_to_save }
-        vgs_start, vgs_stop, vgs_step = vgs
-        vds_start, vds_stop, vds_step = vds
+        vgs_start, vgs_stop, vgs_step = sweep.vgs
+        vds_start, vds_stop, vds_step = sweep.vds
         analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
         hdl = None
         if self.hdl_paths:

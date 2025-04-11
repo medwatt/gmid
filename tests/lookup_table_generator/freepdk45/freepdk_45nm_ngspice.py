@@ -14,6 +14,7 @@ ngspice = NgspiceSimulator(
 
 # Define a sweep object for NMOS transistors.
 nmos_sweep = TransistorSweep(
+    mos_type = "nmos",
     vgs=(0, 1.0, 0.01),
     vds=(0, 1.0, 0.01),
     vbs=(0, -1.0, -0.1),
@@ -22,6 +23,7 @@ nmos_sweep = TransistorSweep(
 
 # Define a sweep object for PMOS transistors.
 pmos_sweep = TransistorSweep(
+    mos_type = "pmos",
     vgs=(0, -1.0, -0.01),
     vds=(0, -1.0, -0.01),
     vbs=(0, 1.0, 0.1),

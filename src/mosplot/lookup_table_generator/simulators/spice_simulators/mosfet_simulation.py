@@ -25,7 +25,7 @@ def worker(job_queue, result_queue, simulator, netlist_gen):
 
         # Generate netlist and simulation setup.
         netlist = netlist_gen.generate_netlist(transistor_name, length, vbs_val)
-        sim_setup = sim.setup_dc_simulation(sweep.vgs, sweep.vds)
+        sim_setup = sim.setup_dc_simulation(sweep)
         full_netlist = netlist + sim_setup
 
         # Run simulation.
@@ -86,9 +86,9 @@ class MosfetSimulation:
         # Make netlist.
         netlist = self.netlist_generator.generate_netlist(transistor_name, length, vbs_val)
         if sim_type == "dc":
-            sim_setup = self.simulator.setup_dc_simulation(sweep.vgs, sweep.vds)
+            sim_setup = self.simulator.setup_dc_simulation(sweep)
         else:
-            sim_setup = self.simulator.setup_op_simulation(sweep.vgs, sweep.vds)
+            sim_setup = self.simulator.setup_op_simulation(sweep)
 
         full_netlist = netlist + sim_setup
         return full_netlist

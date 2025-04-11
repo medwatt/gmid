@@ -20,14 +20,14 @@ class Circuit:
         self.pmos = Mosfet(
             lookup_table=self.lookup_table,
             mos=self.pmos_name,
-            vsb=0.0,
+            vbs=0.0,
             vds=-self.VDD / 3,
             vgs=self.pmos_range
         )
         self.nmos = Mosfet(
             lookup_table=self.lookup_table,
             mos=self.nmos_name,
-            vsb=0.0,
+            vbs=0.0,
             vds=self.VDD / 3,
             vgs=self.nmos_range,
         )
@@ -155,7 +155,7 @@ class Circuit:
 
 if __name__ == "__main__":
     # Define circuit constants and lookup table location.
-    lookup_table = "/home/medwatt/git/gmid/tests/lookup_table_generator/tsmc65/tsmc_65nm.npy"
+    lookup_table = "/home/medwatt/git/gmid/tests/lookup_table_generator/tsmc65_test/tsmc65lvt.npz"
     VDD = 1.2
     CL = 5e-12
     pmos_range = (-1.2, -0.1)

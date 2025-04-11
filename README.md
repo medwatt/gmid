@@ -77,7 +77,7 @@ ngspice = NgspiceSimulator(
     # and the hierarchical name (second entry). Override if needed.
     mos_spice_symbols = ("x1", "x1.main"),
 
-    # Additional spice code that may be needed for the simulation.
+    # Additional spice code that may be needed for the simulation goes here:
     raw_spice = [
         "line 1",
         "line 2",
@@ -101,6 +101,7 @@ from mosplot.lookup_table_generator import TransistorSweep
 
 # Define a sweep object for NMOS transistors.
 nmos_sweep = TransistorSweep(
+    mos_type="nmos",
     vgs=(0, 1.0, 0.01),
     vds=(0, 1.0, 0.01),
     vbs=(0, -1.0, -0.1),
@@ -109,6 +110,7 @@ nmos_sweep = TransistorSweep(
 
 # Define a sweep object for PMOS transistors.
 pmos_sweep = TransistorSweep(
+    mos_type="pmos",
     vgs=(0, -1.0, -0.01),
     vds=(0, -1.0, -0.01),
     vbs=(0, 1.0, 0.1),
@@ -137,7 +139,9 @@ obj = LookupTableGenerator(
     },
 
     # Specify the number of processes to use to build the table faster.
-    # Note: Seems to work well with hspice, but not with ngspice.
+    # Note: `ngspice` already applies parallel processing for certain
+    # models. Setting `n_process` to values other than 1 may result in
+    # slow downs.
     n_process=1,
 )
 
