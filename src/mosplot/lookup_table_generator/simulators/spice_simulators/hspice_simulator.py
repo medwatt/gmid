@@ -1,12 +1,11 @@
 # imports <<<
 import os
-import pickle
 import tempfile
 
 import numpy as np
 
 from .base_simulator import BaseSimulator
-from .parsers.hspice import import_export
+from .parsers.hspice import parse_file
 # >>>
 
 class HspiceSimulator(BaseSimulator):
@@ -45,7 +44,7 @@ class HspiceSimulator(BaseSimulator):
     def build_simulation_command(self, verbose):
         if verbose:
             return [self.simulator_path, self.input_file_path]
-        return [self.simulator_path, "-i", self.input_file_path, "-o", self.tmp_dir]
+        return [self.simulator_path, "-mt 8", "-i", self.input_file_path, "-o", self.tmp_dir]
 
     def setup_op_simulation(self, sweep):
         hdl = None
@@ -130,10 +129,7 @@ class HspiceSimulator(BaseSimulator):
         ]
 
     def parse_output(self):
-        import_export(self.output_file_path, "pickle")
-        with open(self.decoded_output_path, "rb") as file:
-            loaded_data = pickle.load(file)
-        return loaded_data
+        return parse_file(self.output_file_path)
 
     def extract_parameters(self, analysis, n_vgs, n_vds):
         results = {}

@@ -3,7 +3,7 @@ import os
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, List
 from .utils import list_to_string
 # >>>
 
@@ -51,7 +51,7 @@ class BaseSimulator(ABC):
         pass
 
     @abstractmethod
-    def parse_output(self):
+    def parse_output(self) -> Any:
         pass
 
     @abstractmethod

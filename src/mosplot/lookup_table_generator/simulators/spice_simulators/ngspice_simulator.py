@@ -5,7 +5,7 @@ import tempfile
 import numpy as np
 
 from .base_simulator import BaseSimulator
-from .parsers.ngspice import NgspiceRawFileReader
+from .parsers.ngspice import parse_file
 # >>>
 
 class NgspiceSimulator(BaseSimulator):
@@ -100,8 +100,7 @@ class NgspiceSimulator(BaseSimulator):
         ]
 
     def parse_output(self):
-        reader = NgspiceRawFileReader()
-        analysis, _ = reader.read_file(self.output_file_path)
+        analysis, _ = parse_file(self.output_file_path)
         return analysis
 
     def extract_parameters(self, analysis, n_vgs, n_vds):
