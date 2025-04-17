@@ -44,7 +44,7 @@ class HspiceSimulator(BaseSimulator):
     def build_simulation_command(self, verbose):
         if verbose:
             return [self.simulator_path, self.input_file_path]
-        return [self.simulator_path, "-mt 8", "-i", self.input_file_path, "-o", self.tmp_dir]
+        return [self.simulator_path, "-i", self.input_file_path, "-o", self.tmp_dir]
 
     def setup_op_simulation(self, sweep):
         hdl = None
