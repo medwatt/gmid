@@ -35,8 +35,8 @@ class DesignReport:
         if value is None:
             return "N/A"
         if value < 1e-6:
-            return f"{int(round(value * 1e9))} nm"
-        return f"{value * 1e6:.2f} um"
+            return f"{int(round(value * 1e9))}n"
+        return f"{value * 1e6:.2f}u"
 
     @staticmethod
     def format_area(value: Optional[float]) -> str:
@@ -96,6 +96,4 @@ class DesignReport:
                         lines.append(f"    {key}: {val}")
         else:
             lines.append("    Not available.")
-        if self.objective is not None:
-            lines.append(f"\nObjective Cost: {self.objective:.4g}")
         return "\n".join(lines)

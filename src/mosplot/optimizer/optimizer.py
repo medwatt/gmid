@@ -1,6 +1,7 @@
-from typing import Any, List, Dict, Optional
-from scipy.optimize import differential_evolution, OptimizeResult
-from .datatypes import Spec, OptimizationParameter
+from typing import Any, Dict, List, Optional
+import numpy as np
+from scipy.optimize import OptimizeResult, differential_evolution
+from .datatypes import OptimizationParameter, Spec
 
 
 class Optimizer:
@@ -53,17 +54,35 @@ class Optimizer:
             cost += weight * (error**2)
         return cost
 
+    def _transform_params(self, x: List[float]) -> Dict[str, float]:
+        """
+        Transforms optimizer variables into actual parameter values.
+        Handles continuous and discrete bounds.
+        """
+        params: Dict[str, float] = {}
+        for i, param in enumerate(self.parameters):
+            bound = param.bound
+            if isinstance(bound, (list, np.ndarray)):
+                # Discrete parameter: x is an index in [0, len(bound)-1]
+                idx = int(round(x[i]))
+                idx = max(0, min(idx, len(bound) - 1))
+                params[param.name] = float(np.array(bound)[idx])
+            else:
+                # Continuous parameter
+                params[param.name] = x[i]
+        return params
+
     def _objective(self, x: List[float]) -> float:
         """
         Objective function for optimization.
 
         Args:
-            x: A list of parameter values.
+            x: A list of optimizer variables.
 
         Returns:
             The cost computed for the given parameter values.
         """
-        params = {param.name: x[i] for i, param in enumerate(self.parameters)}
+        params = self._transform_params(x)
         specs = self.circuit.evaluate_specs(**params)
         return self.compute_cost(specs, self.target_specs)
 
@@ -77,11 +96,35 @@ class Optimizer:
         Returns:
             The optimization result.
         """
-        bounds = [param.bound for param in self.parameters]
-        self.result = differential_evolution(self._objective, bounds, disp=True, maxiter=maxiter, polish=True)
-        self.opt_params = {
-            param.name: self.result.x[i] for i, param in enumerate(self.parameters)
-        }
+        bounds = []
+        for param in self.parameters:
+            bound = param.bound
+            if isinstance(bound, (list, np.ndarray)):
+                # Discrete parameter: search index range
+                bounds.append((0, len(bound) - 1))
+            else:
+                bounds.append(bound)
+
+        self.result = differential_evolution(
+            self._objective,
+            bounds,
+            disp=True,
+            maxiter=maxiter,
+            polish=True
+        )
+
+        # Decode optimal parameters from result.x
+        opt_params: Dict[str, float] = {}
+        for i, param in enumerate(self.parameters):
+            bound = param.bound
+            if isinstance(bound, (list, np.ndarray)):
+                idx = int(round(self.result.x[i]))
+                idx = max(0, min(idx, len(bound) - 1))
+                opt_params[param.name] = float(np.array(bound)[idx])
+            else:
+                opt_params[param.name] = self.result.x[i]
+
+        self.opt_params = opt_params
         return self.result
 
     def get_opt_params(self) -> Dict[str, float]:
@@ -94,3 +137,4 @@ class Optimizer:
         if self.opt_params is None:
             raise ValueError("Optimization has not been performed yet.")
         return self.opt_params
+

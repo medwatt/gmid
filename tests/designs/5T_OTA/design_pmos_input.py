@@ -17,6 +17,7 @@ class Circuit:
         self.map_transistors()
 
     def map_transistors(self):
+        # 3‐device stack => |vds|=VDD/3
         self.pmos = Mosfet(
             lookup_table=self.lookup_table,
             mos=self.pmos_name,
@@ -32,7 +33,6 @@ class Circuit:
             vgs=self.nmos_range,
         )
 
-        # We have 3 kinds of transistors.
         self.transistor_mapping = {
             "pmos_input": {
                 "transistor": self.pmos,
@@ -89,18 +89,22 @@ class Circuit:
         gmid_tail  = params["gmid_tail"]
         Ibias      = params["Ibias"]
 
-        self.transistor_mapping["pmos_input"]["current"] = Ibias / 2.0
-        self.transistor_mapping["nmos_load"]["current"] = Ibias / 2.0
+        # Assign currents.
         self.transistor_mapping["pmos_tail"]["current"] = Ibias
+        self.transistor_mapping["nmos_load"]["current"] = Ibias / 2.0
+        self.transistor_mapping["pmos_input"]["current"] = Ibias / 2.0
 
-        cdd_input, vgs_input, vdsat_input, gdsid_input = self.pmos.interpolate(
+        ################################################################################
+        #                            Transistor Parameters                             #
+        ################################################################################
+        cdd_input, vsg_input, vdsat_input, gdsid_input = self.pmos.interpolate(
             x_expression=self.pmos.length_expression,
             x_value=L_input,
             y_expression=self.pmos.gmid_expression,
             y_value=gmid_input,
             z_expression=[
                 self.pmos.cdd_expression,
-                self.pmos.vgs_expression,
+                self.pmos.vsg_expression,
                 self.pmos.vdsat_expression,
                 self.gdsid_expression,
             ],
@@ -118,24 +122,27 @@ class Circuit:
             ],
             fast=True,
         )
-        vdsat_tail, gdsid_tail = self.pmos.interpolate(
+        vdsat_tail, early_tail = self.pmos.interpolate(
             x_expression=self.pmos.length_expression,
             x_value=L_tail,
             y_expression=self.pmos.gmid_expression,
             y_value=gmid_tail,
             z_expression=[
                 self.pmos.vdsat_expression,
-                self.gdsid_expression,
+                self.pmos.early_voltage_expression,
             ],
             fast=True,
         )
 
+        ################################################################################
+        #                              Specs Computation                               #
+        ################################################################################
         current_input = Ibias / 2.0
         gbw = (gmid_input * current_input) / (2 * np.pi * (self.CL + cdd_input[0] + cdd_load[0]))
         gain = (gmid_input / (gdsid_input + gdsid_load))[0]
-        icmr_low = (vgs_load + vgs_input + vdsat_input)[0]
-        icmr_high = (self.VDD + vgs_input - vdsat_tail)[0]
-        cmrr = (gain * gmid_load / gdsid_tail)[0]
+        icmr_low = (vgs_load - vsg_input + vdsat_input)[0]
+        icmr_high = (self.VDD - vsg_input - vdsat_tail)[0]
+        cmrr = (gain * gmid_load * early_tail)[0]
 
         self.compute_device_dimensions(params)
         overall_area = sum(item["Area"] for item in self.device_dimensions.values() if item["Area"])
@@ -155,7 +162,7 @@ class Circuit:
 
 if __name__ == "__main__":
     # Define circuit constants and lookup table location.
-    lookup_table = "/home/medwatt/git/gmid/tests/lookup_table_generator/tsmc65_test/tsmc65lvt.npz"
+    lookup_table = "/home/medwatt/git/gmid/tests/lookup_table_generator/test/tsmc65_test/tsmc65lvt.npz"
     VDD = 1.2
     CL = 5e-12
     pmos_range = (-1.2, -0.1)
@@ -169,7 +176,7 @@ if __name__ == "__main__":
     # Define optimization parameters as a list of OptimizationParameter objects.
     parameters = [
         OptimizationParameter("L_input", (100e-9, 2e-6)),
-        OptimizationParameter("gmid_input", (7, 16)),
+        OptimizationParameter("gmid_input", (7, 18)),
         OptimizationParameter("L_load", (100e-9, 2e-6)),
         OptimizationParameter("gmid_load", (7, 15)),
         OptimizationParameter("L_tail", (100e-9, 2e-6)),
@@ -180,17 +187,17 @@ if __name__ == "__main__":
     # Define target specifications using Spec objects.
     target_specs = {
         "GBW":       Spec(5e6, "max", 5),
-        "Gain":      Spec(30, "max", 2),
+        "Gain":      Spec(10 ** (30 / 20), "max", 5),
         "Ibias":     Spec(20e-6, "min", 1),
         "ICMR_LOW":  Spec(0.1, "min", 1),
-        "ICMR_HIGH": Spec(0.7, "max", 5),
-        "CMRR":      Spec(2000, "max", 3),
-        "Area":      Spec(15e-12, "min", 1)
+        "ICMR_HIGH": Spec(0.65, "max", 5),
+        "CMRR":      Spec(10 ** (70 / 20), "max", 1),
+        "Area":      Spec(5e-12, "min", 0.1)
     }
 
     # Instantiate and run the optimizer.
     optimizer = Optimizer(circuit, parameters, target_specs)
-    result = optimizer.optimize(maxiter=5)
+    result = optimizer.optimize(maxiter=30)
 
     # Generate and print the design report.
     report = DesignReport(circuit, optimizer)
@@ -201,21 +208,13 @@ if __name__ == "__main__":
     opt_params = optimizer.get_opt_params()
 
     # Interpolate VGS for the input device and tail.
-    vgs_input = circuit.pmos.interpolate(
+    vsg_input = circuit.pmos.interpolate(
         x_expression=circuit.pmos.length_expression,
         x_value=opt_params["L_input"],
         y_expression=circuit.pmos.gmid_expression,
         y_value=opt_params["gmid_input"],
-        z_expression=circuit.pmos.vgs_expression
-    )
-    vgs_tail = circuit.pmos.interpolate(
-        x_expression=circuit.pmos.length_expression,
-        x_value=opt_params["L_tail"],
-        y_expression=circuit.pmos.gmid_expression,
-        y_value=opt_params["gmid_tail"],
-        z_expression=circuit.pmos.vgs_expression
+        z_expression=circuit.pmos.vsg_expression
     )
 
     print("")
-    print(f"Input Pair VSG = {-vgs_input[0]}")
-    print(f"Tail VG = {VDD + vgs_tail[0]}")
+    print(f"pmos_input VSG = {vsg_input[0]}")

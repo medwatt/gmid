@@ -1,5 +1,6 @@
+import numpy as np
 from dataclasses import dataclass
-from typing import Tuple, Literal
+from typing import Tuple, Literal, Union, List
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,6 @@ class Spec:
     mode: Literal["min", "max"]
     weight: float
 
-
 @dataclass(frozen=True)
 class OptimizationParameter:
     """
@@ -25,8 +25,7 @@ class OptimizationParameter:
 
     Attributes:
         name: The parameter name.
-        bound: A tuple (min, max) defining the bounds for the parameter.
+        bound: A tuple, list, or 1D numpy array defining the lower and upper limits.
     """
-
     name: str
-    bound: Tuple[float, float]
+    bound: Union[Tuple[float, float], List[float], np.ndarray]
