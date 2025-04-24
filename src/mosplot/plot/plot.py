@@ -31,7 +31,7 @@ class Plotter:
         """
         dpi = fig.dpi
         font_pt = plt.rcParams["font.size"]
-        avg_char_px = font_pt * 0.6
+        avg_char_px = font_pt * 0.5
         return avg_char_px / dpi
 
     def _get_legend_ncols(self, labels: List[str], fig: Figure, legend_placement) -> int:
@@ -52,8 +52,8 @@ class Plotter:
         else:
             legend_width = legend_len * char_inch
             fig_h = fig.get_size_inches()[1]
-            ncol = int(np.floor(legend_width / fig_h))
-            return min(ncol, len(labels))
+            ncol = int(np.ceil(legend_width / fig_h))
+            return max(ncol, 1)
     # >>>
 
     # single axis plot <<<

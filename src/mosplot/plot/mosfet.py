@@ -201,7 +201,7 @@ class Mosfet:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
-        legend_placement: Optional[str] = None,
+        legend_placement: Optional[str] = "right",
         legend_location: Optional[Tuple[float, float]] = None,
         legend_eng_format: bool = True,
         show_legend: bool = True,
@@ -228,7 +228,7 @@ class Mosfet:
             x_eng_format: If True, format the x-axis in engineering units.
             y_eng_format: If True, format the primary y-axis in engineering units.
             y2_eng_format: If True, format the secondary y-axis in engineering units.
-            legend_placement: Position of the legend (e.g., 'best', 'upper right', etc.).
+            legend_placement: Position of the legend (e.g., 'best', 'right', 'top', 'bottom').
             legend_location: Manual coordinates for legend placement as (x, y) tuple.
             lengend_eng_format: If True, format legend values in engineering units.
             save_fig: Filename to save the figure.
@@ -342,7 +342,7 @@ class Mosfet:
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
         legend_location: Optional[Tuple[float, float]] = None,
-        legend_placement: Optional[str] = None,
+        legend_placement: Optional[str] = "right",
         legend_eng_format: bool = True,
         show_legend: bool = True,
         save_fig: str = "",
@@ -372,7 +372,7 @@ class Mosfet:
             x_eng_format: If True, format the x-axis in engineering units.
             y_eng_format: If True, format the primary y-axis in engineering units.
             y2_eng_format: If True, format the secondary y-axis in engineering units.
-            legend_placement: Position of the legend (e.g., 'best', 'upper right', etc.).
+            legend_placement: Position of the legend (e.g., 'best', 'right', 'top', 'bottom').
             legend_location: Manual coordinates for legend placement as (x, y) tuple.
             lengend_eng_format: If True, format legend values in engineering units.
             save_fig: Filename to save the figure.
@@ -483,7 +483,7 @@ class Mosfet:
         fig_size: Optional[Tuple[int, int]] = None,
         legend_title: Optional[str] = "",
         legend_location: Optional[Tuple[float, float]] = None,
-        legend_placement: Optional[str] = None,
+        legend_placement: Optional[str] = "right",
         legend_eng_format: bool = True,
         show_legend: bool = True,
         title: Optional[str] = None,
@@ -507,7 +507,7 @@ class Mosfet:
             x_eng_format: If True, format x-axis labels in engineering units.
             y_eng_format: If True, format y-axis labels in engineering units.
             legend: Optional list of legend entries.
-            legend_placement: Position of the legend (e.g., 'best', 'upper right', etc.).
+            legend_placement: Position of the legend (e.g., 'best', 'right', 'top', 'bottom').
             legend_location: Manual coordinates for legend placement as (x, y) tuple.
             lengend_eng_format: If True, format legend values in engineering units.
             title: Optional title for the plot.
