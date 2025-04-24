@@ -4,9 +4,9 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 
 from .expressions import Expression
-from .util import evaluate_expression, extract_2d_table
 from .interpolation import GridInterpolator, KDTreeInterpolator
 from .plot import Plotter
+from .util import evaluate_expression, extract_2d_table
 # >>>
 
 
@@ -14,7 +14,7 @@ class Mosfet:
     """
     Initialize a MOSFET object.
 
-    When creating a MOSFET object, exactly two of the parameters `length`, `vbs`, `vgs`, and `vds`
+    When creating a MOSFET object, exactly two of the parameters `length`, `vbs`, `vgs`, or `vds`
     must be provided as fixed values. The remaining parameters can be specified as a range or set to
     `None` to use the full range from the lookup table. Any parameter not fixed is treated as the
     secondary sweep variable.
@@ -32,7 +32,8 @@ class Mosfet:
         primary: name of the primary sweep.
 
     Examples:
-        Fixed vds; sweep vgs (primary) and length (secondary)
+        Fixed vbs and vds; sweep vgs (primary) and length (secondary)
+
         nmos = Mosfet(lookup_table=lookup_table, mos="nch_lvt", vbs=0.0, vds=0.4, vgs=(0.01, 1.19))
         pmos = Mosfet(lookup_table=lookup_table, mos="pch_lvt", vbs=0.0, vgs=-0.4, vds=(-1.19, -0.01))
     """
@@ -90,7 +91,9 @@ class Mosfet:
         else:
             self.vdsat_expression   = Expression(variables=["vdsat"],   label="$V_{\\mathrm{DS_{\\mathrm{SAT}}}}\\ (V)$")
 
-        # Initialize computed expressions.
+        ########################################
+        #         Computed Expressions         #
+        ########################################
         self.vsg_expression = Expression(
             variables=["vgs"],
             function=lambda x: -x,
@@ -141,6 +144,11 @@ class Mosfet:
             function=lambda x, y: x / y,
             label="$V_{A}\\ (V)$"
         )
+        self.inverse_early_voltage_expression = Expression(
+            variables=["gds", "id"],
+            function=lambda x, y: x / y,
+            label="$1/V_{A}\\ (V^{-1})$"
+        )
         self.rds_expression = Expression(
             variables=["gds"],
             function=lambda x: 1 / x,
@@ -162,11 +170,7 @@ class Mosfet:
     # >>>
 
     # calculate from expression <<<
-    def calculate_from_expression(
-        self,
-        expression: Expression,
-        filter_by_rows: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, str]:
+    def calculate_from_expression(self, expression: Expression, filter_by_rows: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str]:
         """
         Calculates values from a given expression over the extracted lookup table.
 
@@ -197,11 +201,12 @@ class Mosfet:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
-        save_fig: str = "",
-        fig_size: Optional[Tuple[int, int]] = None,
         legend_placement: Optional[str] = None,
         legend_location: Optional[Tuple[float, float]] = None,
+        legend_eng_format: bool = True,
         show_legend: bool = True,
+        fig_size: Optional[Tuple[int, int]] = None,
+        save_fig: str = "",
         return_result: bool = False
     ) -> Optional[Tuple]:
         """
@@ -223,6 +228,9 @@ class Mosfet:
             x_eng_format: If True, format the x-axis in engineering units.
             y_eng_format: If True, format the primary y-axis in engineering units.
             y2_eng_format: If True, format the secondary y-axis in engineering units.
+            legend_placement: Position of the legend (e.g., 'best', 'upper right', etc.).
+            legend_location: Manual coordinates for legend placement as (x, y) tuple.
+            lengend_eng_format: If True, format legend values in engineering units.
             save_fig: Filename to save the figure.
             return_result: If True, return the computed arrays.
 
@@ -255,7 +263,7 @@ class Mosfet:
             fig_size = (6, 4) if fig_size is None else fig_size
             self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
             y2, y2_label = self.calculate_from_expression(y2_expression, indices)
-            fig, ax, ax2 = self.plotter.create_figure_with_twin(
+            _, ax, ax2 = self.plotter.create_figure_with_twin(
                 title="",
                 x_label=x_label,
                 y_label=y_label,
@@ -280,15 +288,16 @@ class Mosfet:
                     line_style="solid",
                     legend=legend_values,
                     legend_title=legend_title,
-                    save_fig=save_fig,
+                    legend_eng_format=legend_eng_format,
                     legend_placement="top" if legend_placement is None else legend_placement,
                     bbox_to_anchor=legend_location,
+                    save_fig=save_fig,
             )
             return (x, y, y2) if return_result else None
         else:
             fig_size = (8, 4) if fig_size is None else fig_size
             self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
-            fig, ax = self.plotter.create_figure(
+            _, ax = self.plotter.create_figure(
                 title="",
                 x_label=x_label,
                 y_label=y_label,
@@ -301,15 +310,14 @@ class Mosfet:
             )
             self.plotter.plot_data(
                 ax, x, y,
-                legend_placement=legend_placement,
-                bbox_to_anchor=legend_location,
                 legend=legend_values,
                 legend_title=legend_title,
+                legend_eng_format=legend_eng_format,
+                legend_placement=legend_placement,
+                bbox_to_anchor=legend_location,
                 save_fig=save_fig,
             )
             return (x, y) if return_result else None
-
-        return None
     # >>>
 
     # plot by sweep <<<
@@ -333,11 +341,12 @@ class Mosfet:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
-        save_fig: str = "",
-        fig_size: Optional[Tuple[int, int]] = None,
         legend_location: Optional[Tuple[float, float]] = None,
         legend_placement: Optional[str] = None,
+        legend_eng_format: bool = True,
         show_legend: bool = True,
+        save_fig: str = "",
+        fig_size: Optional[Tuple[int, int]] = None,
         return_result: bool = False
     ) -> Optional[Tuple]:
         """
@@ -363,8 +372,10 @@ class Mosfet:
             x_eng_format: If True, format the x-axis in engineering units.
             y_eng_format: If True, format the primary y-axis in engineering units.
             y2_eng_format: If True, format the secondary y-axis in engineering units.
+            legend_placement: Position of the legend (e.g., 'best', 'upper right', etc.).
+            legend_location: Manual coordinates for legend placement as (x, y) tuple.
+            lengend_eng_format: If True, format legend values in engineering units.
             save_fig: Filename to save the figure.
-            legend_location: Optional tuple for custom legend placement.
             return_result: If True, return the computed arrays.
 
         Returns:
@@ -397,7 +408,7 @@ class Mosfet:
             fig_size = (6, 4) if fig_size is None else fig_size
             self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
             y2, y2_label = evaluate_expression(y2_expression, extracted_table)
-            fig, ax, ax2 = self.plotter.create_figure_with_twin(
+            _, ax, ax2 = self.plotter.create_figure_with_twin(
                 title="",
                 x_label=x_label,
                 y_label=y_label,
@@ -422,15 +433,16 @@ class Mosfet:
                 line_style="solid",
                 legend=legend,
                 legend_title=legend_title,
-                save_fig=save_fig,
+                legend_eng_format=legend_eng_format,
                 legend_placement="top" if legend_placement is None else legend_placement,
-                bbox_to_anchor=legend_location
+                bbox_to_anchor=legend_location,
+                save_fig=save_fig,
             )
             return (x, y, y2) if return_result else None
         else:
             fig_size = (8, 4) if fig_size is None else fig_size
             self.plotter = Plotter(fig_size=fig_size, show_legend=show_legend)
-            fig, ax = self.plotter.create_figure(
+            _, ax = self.plotter.create_figure(
                 title="",
                 x_label=x_label,
                 y_label=y_label,
@@ -445,9 +457,10 @@ class Mosfet:
                 ax, x, y,
                 legend=legend,
                 legend_title=legend_title,
+                legend_eng_format=legend_eng_format,
+                bbox_to_anchor=legend_location,
                 legend_placement="right" if legend_placement is None else legend_placement,
                 save_fig=save_fig,
-                bbox_to_anchor=legend_location
             )
             return (x, y) if return_result else None
     # >>>
@@ -471,6 +484,7 @@ class Mosfet:
         legend_title: Optional[str] = "",
         legend_location: Optional[Tuple[float, float]] = None,
         legend_placement: Optional[str] = None,
+        legend_eng_format: bool = True,
         show_legend: bool = True,
         title: Optional[str] = None,
         save_fig: str = ""
@@ -493,6 +507,9 @@ class Mosfet:
             x_eng_format: If True, format x-axis labels in engineering units.
             y_eng_format: If True, format y-axis labels in engineering units.
             legend: Optional list of legend entries.
+            legend_placement: Position of the legend (e.g., 'best', 'upper right', etc.).
+            legend_location: Manual coordinates for legend placement as (x, y) tuple.
+            lengend_eng_format: If True, format legend values in engineering units.
             title: Optional title for the plot.
             save_fig: Optional filename to save the figure.
         """
@@ -513,8 +530,9 @@ class Mosfet:
             legend=legend,
             legend_title=legend_title,
             legend_placement=legend_placement,
+            legend_eng_format=legend_eng_format,
+            bbox_to_anchor=legend_location,
             save_fig=save_fig,
-            bbox_to_anchor=legend_location
         )
     # >>>
 

@@ -138,11 +138,12 @@ class Circuit:
         #                              Specs Computation                               #
         ################################################################################
         current_input = Ibias / 2.0
-        gbw = (gmid_input * current_input) / (2 * np.pi * (self.CL + cdd_input[0] + cdd_load[0]))
+        gbw = (gmid_input * current_input) / (2 * np.pi * (self.CL + cdd_input + cdd_load))[0]
         gain = (gmid_input / (gdsid_input + gdsid_load))[0]
-        icmr_low = (vgs_load - vsg_input + vdsat_input)[0]
+        icmr_low = (vdsat_input - vsg_input + vgs_load)[0]
         icmr_high = (self.VDD - vsg_input - vdsat_tail)[0]
         cmrr = (gain * gmid_load * early_tail)[0]
+        sr = Ibias / self.CL
 
         self.compute_device_dimensions(params)
         overall_area = sum(item["Area"] for item in self.device_dimensions.values() if item["Area"])
@@ -154,6 +155,7 @@ class Circuit:
             "ICMR_LOW": icmr_low,
             "ICMR_HIGH": icmr_high,
             "CMRR": cmrr,
+            "SlewRate": sr,
             "Area": overall_area,
         }
 
@@ -178,9 +180,9 @@ if __name__ == "__main__":
         OptimizationParameter("L_input", (100e-9, 2e-6)),
         OptimizationParameter("gmid_input", (7, 18)),
         OptimizationParameter("L_load", (100e-9, 2e-6)),
-        OptimizationParameter("gmid_load", (7, 15)),
+        OptimizationParameter("gmid_load", (5, 12)),
         OptimizationParameter("L_tail", (100e-9, 2e-6)),
-        OptimizationParameter("gmid_tail", (7, 15)),
+        OptimizationParameter("gmid_tail", (5, 12)),
         OptimizationParameter("Ibias", (1e-6, 40e-6))
     ]
 
@@ -189,6 +191,7 @@ if __name__ == "__main__":
         "GBW":       Spec(5e6, "max", 5),
         "Gain":      Spec(10 ** (30 / 20), "max", 5),
         "Ibias":     Spec(20e-6, "min", 1),
+        "SlewRate":  Spec(5e6, "min", 1),
         "ICMR_LOW":  Spec(0.1, "min", 1),
         "ICMR_HIGH": Spec(0.65, "max", 5),
         "CMRR":      Spec(10 ** (70 / 20), "max", 1),

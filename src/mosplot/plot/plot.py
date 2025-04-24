@@ -1,15 +1,19 @@
 # imports <<<
 from typing import List, Optional, Tuple, Union
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.ticker import EngFormatter
+
 # >>>
 
 
 class Plotter:
     def __init__(
         self,
-        fig_size: Tuple[int, int] = (8, 4),
+        fig_size: Optional[Tuple[int, int]] = (8, 4),
         line_width: float = 1.5,
         grid_color: str = "0.9",
         show_legend: bool = True,
@@ -18,6 +22,39 @@ class Plotter:
         self.line_width = line_width
         self.grid_color = grid_color
         self.show_legend = show_legend
+
+    # legend number of columns columns <<<
+    def _estimate_char_inch(self, fig: Figure) -> float:
+        """
+        Approximate the width of one character in inches,
+        based on default font size and figure DPI.
+        """
+        dpi = fig.dpi
+        font_pt = plt.rcParams["font.size"]
+        avg_char_px = font_pt * 0.6
+        return avg_char_px / dpi
+
+    def _get_legend_ncols(self, labels: List[str], fig: Figure, legend_placement) -> int:
+        """
+        Choose number of columns so that the widest label
+        fits in the figure width.
+        """
+        legend_len = len("".join(labels))
+        char_inch = self._estimate_char_inch(fig)
+
+        if legend_placement in ("bottom", "top"):
+            symbol_inch = 0.15  # Approximate width of a legend symbol
+            legend_width = legend_len * (char_inch + symbol_inch)
+            fig_w = fig.get_size_inches()[0]
+            nrow = int(np.ceil(legend_width / fig_w))
+            ncol = int(np.ceil(len(labels) / nrow))
+            return min(ncol, len(labels))
+        else:
+            legend_width = legend_len * char_inch
+            fig_h = fig.get_size_inches()[1]
+            ncol = int(np.floor(legend_width / fig_h))
+            return min(ncol, len(labels))
+    # >>>
 
     # single axis plot <<<
     def create_figure(
@@ -31,7 +68,7 @@ class Plotter:
         y_scale: str = "",
         x_eng_format: bool = False,
         y_eng_format: bool = False,
-    ) -> Tuple[plt.Figure, plt.Axes]:
+    ) -> Tuple[Figure, Axes]:
 
         fig, ax = plt.subplots(figsize=self.fig_size, tight_layout=True)
         ax.set_title(title)
@@ -77,7 +114,7 @@ class Plotter:
         x_eng_format: bool = False,
         y_eng_format: bool = False,
         y2_eng_format: bool = False,
-    ) -> Tuple[plt.Figure, plt.Axes, plt.Axes]:
+    ) -> Tuple[Figure, Axes, Axes]:
 
         fig, ax = plt.subplots(figsize=self.fig_size, tight_layout=True)
         ax.set_title(title)
@@ -120,13 +157,14 @@ class Plotter:
     # plot data <<<
     def plot_data(
         self,
-        ax: plt.Axes,
+        ax: Axes,
         x: Union[np.ndarray, List[np.ndarray]],
         y: Union[np.ndarray, List[np.ndarray]],
         line_style: Optional[str] = "solid",
-        legend: Optional[Union[np.ndarray, List[Union[float, str]]]] = None,
+        legend: Optional[Union[np.ndarray, List[str], List[Union[float, str]]]] = None,
         legend_title: Optional[str] = None,
         legend_placement: Optional[str] = "right",
+        legend_eng_format: bool = True,
         bbox_to_anchor: Optional[Tuple[float, float]] = None,
         save_fig: str = "",
         end_plotting: bool = True,
@@ -179,12 +217,16 @@ class Plotter:
 
         if end_plotting:
             if legend is not None and self.show_legend:
+
                 # Determine if legend items are numeric.
-                if isinstance(legend[0], (int, float, np.number)):
+                if legend_eng_format and isinstance(legend[0], (int, float, np.number)):
                     formatter = EngFormatter(unit="")
                     formatted_legend = [formatter(val) for val in legend]
                 else:
-                    formatted_legend = legend
+                    formatted_legend = [str(val) for val in legend]
+
+                # Number of columns to use.
+                ncol = self._get_legend_ncols(formatted_legend, ax.figure, legend_placement)
 
                 if legend_placement == "bottom":
                     anchor = (0.5, -0.25) if bbox_to_anchor is None else bbox_to_anchor
@@ -192,7 +234,7 @@ class Plotter:
                         formatted_legend,
                         loc="upper center",
                         bbox_to_anchor=anchor,
-                        ncol=len(formatted_legend),
+                        ncol=ncol,
                         title=legend_title,
                     )
 
@@ -202,7 +244,7 @@ class Plotter:
                         formatted_legend,
                         loc="lower center",
                         bbox_to_anchor=anchor,
-                        ncol=len(formatted_legend),
+                        ncol=ncol,
                         title=legend_title,
                     )
 
@@ -212,6 +254,7 @@ class Plotter:
                         formatted_legend,
                         loc="center left",
                         bbox_to_anchor=anchor,
+                        ncol=ncol,
                         title=legend_title,
                     )
 
@@ -219,6 +262,7 @@ class Plotter:
                     leg = ax.legend(
                         formatted_legend,
                         loc="best",
+                        ncol=ncol,
                         title=legend_title,
                     )
 
