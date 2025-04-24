@@ -248,20 +248,20 @@ class Plotter:
                         title=legend_title,
                     )
 
-                elif legend_placement == "right":
-                    anchor = (1, 0.5) if bbox_to_anchor is None else bbox_to_anchor
+                elif legend_placement == "best":
                     leg = ax.legend(
                         formatted_legend,
-                        loc="center left",
-                        bbox_to_anchor=anchor,
+                        loc="best",
                         ncol=ncol,
                         title=legend_title,
                     )
 
                 else:
+                    anchor = (1, 0.5) if bbox_to_anchor is None else bbox_to_anchor
                     leg = ax.legend(
                         formatted_legend,
-                        loc="best",
+                        loc="center left",
+                        bbox_to_anchor=anchor,
                         ncol=ncol,
                         title=legend_title,
                     )
