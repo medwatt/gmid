@@ -67,7 +67,7 @@ class NgspiceSimulator(BaseSimulator):
             "id":     ["save i(vds)",             "i(i_vds)"],
             "weff":   [f"save @{symbol}[weff]",   f"v(@{symbol}[weff])"],
             "vth":    [f"save @{symbol}[vth]",    f"v(@{symbol}[vth])"],
-            "vdsat":  [f"save @{symbol}[vdsat]",  f"v(@{symbol}[vdsst])"],
+            "vdsat":  [f"save @{symbol}[vdsat]",  f"v(@{symbol}[vdsat])"],
             "vdssat": [f"save @{symbol}[vdssat]", f"v(@{symbol}[vdssat])"],
             "gm":     [f"save @{symbol}[gm]",     f"@{symbol}[gm]"],
             "gmbs":   [f"save @{symbol}[gmbs]",   f"@{symbol}[gmbs]"],
