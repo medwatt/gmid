@@ -2,6 +2,10 @@
 import numpy as np
 from multiprocessing import Process, Queue
 from .spice_mosfet_netlist_generator import SpiceMosfetNetlistGenerator
+from .spectre_mosfet_netlist_generator import SpectreMosfetNetlistGenerator
+from .ngspice_simulator import NgspiceSimulator
+from .hspice_simulator import HspiceSimulator
+from .spectre_simulator import SpectreSimulator
 from .utils import list_to_string
 # >>>
 
@@ -52,8 +56,13 @@ class MosfetSimulation:
         self.sweeps = model_sweeps
         self.n_process = n_process
 
+        if isinstance(self.simulator, SpectreSimulator):
+            netlist_generator_obj = SpectreMosfetNetlistGenerator
+        else:
+            netlist_generator_obj = SpiceMosfetNetlistGenerator
+
         # Create a netlist generator.
-        self.netlist_generator = SpiceMosfetNetlistGenerator(
+        self.netlist_generator = netlist_generator_obj(
             model_sweeps,
             simulator.device_parameters,
             simulator.mos_spice_symbols,
@@ -154,6 +163,8 @@ class MosfetSimulation:
         results = []
         for i in range(total_jobs):
             result = result_queue.get()
+            for k in result[3].keys():
+                print(k, result[3][k].shape)
             print(f"Progress: {i + 1}/{total_jobs} jobs completed")
             results.append(result)
 
