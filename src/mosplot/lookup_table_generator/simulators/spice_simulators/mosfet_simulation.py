@@ -163,8 +163,6 @@ class MosfetSimulation:
         results = []
         for i in range(total_jobs):
             result = result_queue.get()
-            for k in result[3].keys():
-                print(k, result[3][k].shape)
             print(f"Progress: {i + 1}/{total_jobs} jobs completed")
             results.append(result)
 

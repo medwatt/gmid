@@ -4,8 +4,8 @@ from mosplot.lookup_table_generator.simulators import NgspiceSimulator
 def main():
     ngspice = NgspiceSimulator(
         include_paths=[
-            "/mnt/home/medwatt/git/gmid/tests/lookup_table_generator/freepdk45/NMOS_VTH.inc",
-            "/mnt/home/medwatt/git/gmid/tests/lookup_table_generator/freepdk45/PMOS_VTH.inc"
+            "/home/medwatt/git/gmid/tests/lookup_table_generator/freepdk45/NMOS_VTH.inc",
+            "/home/medwatt/git/gmid/tests/lookup_table_generator/freepdk45/PMOS_VTH.inc"
         ],
         device_parameters={"w": 10e-6},
     )
@@ -23,7 +23,7 @@ def main():
         vgs=(0, -1.0, -0.01),
         vds=(0, -1.0, -0.01),
         vbs=(0, 1.0, 0.5),
-        length=[200e-9, 500e-9],
+        length=[45e-9, 100e-9],
     )
 
     obj = LookupTableGenerator(
@@ -33,7 +33,7 @@ def main():
         n_process=1,
     )
 
-    obj.build("/home/medwatt/git/gmid/tests/lookup_table_generator/freepdk45/freepdk45")
+    obj.build("/home/medwatt/git/gmid/tests/lookup_table_generator/local_testing/builds/freepdk45_ngspice")
 
 if __name__ == "__main__":
     main()

@@ -8,4 +8,5 @@ eggs/
 *.npy
 *.npz
 *.osdi
-
+/tests/*
+!/tests/lookup_table_generator/freepdk45/
