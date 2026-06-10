@@ -22,8 +22,6 @@ those tables.
 6. [Optimization](#optimization)
 7. [Acknowledgments](#acknowledgments)
 
----
-
 ## Installation
 
 **Requirements:** Python 3.9+, numpy, scipy, matplotlib, and at least one
@@ -40,8 +38,6 @@ git clone https://github.com/medwatt/gmid.git
 cd gmid
 pip install -e .
 ```
-
----
 
 ## Generating a Lookup Table
 
@@ -73,6 +69,8 @@ sim = NgspiceSimulator(
     # lib_mappings=[("/path/to/models.lib", "tt_pre")],
 
     # Parameters to extract. Defaults to all available if omitted.
+    # Only the parameters listed here appear in the generated netlists, so
+    # omit anything your PDK's models don't expose (see note below).
     parameters_to_save=["id", "vth", "vdsat", "gm"],
 
     # Transistor instance name used in the netlist.
@@ -123,6 +121,18 @@ sim = SpectreSimulator(
 )
 ```
 
+> [!TIP]
+> **If a parameter is not available in your PDK, omit it -- don't fork this
+> repo just for that.** Not every model exposes every operating-point parameter
+> (for example, `vdssat` exists on BSIM4 models but not on many others).
+> Anything you leave out of `parameters_to_save` is left out of the generated
+> netlists entirely, so the simulation runs cleanly on models that lack it.
+> Requesting a name the backend doesn't support prints a warning listing the
+> supported names. Plotting and lookups only require `id` and `gm` (the
+> gm/Id grid is built from them); everything else is optional, and the tool
+> adapts to whatever the table contains (e.g. `vdsat` vs `vdssat` is
+> detected automatically).
+
 ### Step 2: Define Transistor Sweeps
 
 ```python
@@ -171,8 +181,6 @@ gen = LookupTableGenerator(
 gen.build("./freepdk_45nm")
 ```
 
----
-
 ## Using a Lookup Table
 
 ```python
@@ -213,8 +221,6 @@ print(nmos.length)
 # array([6.50e-08, 8.00e-08, 1.00e-07, ...])
 ```
 
----
-
 ## Plotting
 
 ### Built-in Expressions
@@ -222,16 +228,16 @@ print(nmos.length)
 Pass any of these to `x_expression` / `y_expression` in a plot or lookup call:
 
 
-| Expression | Description |
-|---|---|
-| `gmid_expression` | $g_m / I_D$ |
-| `vgs_expression` | $V_{GS}$ |
-| `vds_expression` | $V_{DS}$ |
-| `vbs_expression` | $V_{BS}$ |
-| `gain_expression` | Intrinsic gain $g_m / g_{ds}$ |
-| `current_density_expression` | $I_D / W$ |
-| `transit_frequency_expression` | Transit frequency $f_T$ |
-| `early_voltage_expression` | Early voltage $V_A$ |
+ | Expression                     | Description                   |
+ | ---                            | ---                           |
+ | `gmid_expression`              | $g_m / I_D$                   |
+ | `vgs_expression`               | $V_{GS}$                      |
+ | `vds_expression`               | $V_{DS}$                      |
+ | `vbs_expression`               | $V_{BS}$                      |
+ | `gain_expression`              | Intrinsic gain $g_m / g_{ds}$ |
+ | `current_density_expression`   | $I_D / W$                     |
+ | `transit_frequency_expression` | Transit frequency $f_T$       |
+ | `early_voltage_expression`     | Early voltage $V_A$           |
 
 
 To define a custom expression:
@@ -386,8 +392,6 @@ nmos.quick_plot(
 
 ![quick plot](./figures/nmos_quick_plot.svg)
 
----
-
 ## Interpolation & Raw Lookups
 
 **Interpolate at a single point**; given a length and a gm/Id target, find the
@@ -428,8 +432,6 @@ x = nmos.lookup_expression_from_table(
 )
 ```
 
----
-
 ## Optimization
 
 Define the free parameters and target specifications, implement a `Circuit`
@@ -466,8 +468,6 @@ optimizer.optimize(maxiter=5)
 report = DesignReport(circuit, optimizer)
 print(report.report())
 ```
-
----
 
 ## Acknowledgments
 

@@ -20,7 +20,7 @@ class NgspiceSimulator(BaseSimulator):
         simulator_path="ngspice",
         mos_spice_symbols=("m1", "m1"),
         device_parameters={"w": 10e-6},
-        parameters_to_save=["weff", "id", "vth", "vdsat", "vdssat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
+        parameters_to_save=["weff", "id", "vth", "vdsat", "vdssat", "gm", "gmbs", "gds", "cgg", "cgs", "cbg", "cgd", "cdd"],
     ):
         super().__init__(
                 raw_spice=raw_spice,
@@ -79,13 +79,26 @@ class NgspiceSimulator(BaseSimulator):
             "cgd":    [f"save @{symbol}[cgd]",    f"@{symbol}[cgd]"],
             "cdd":    [f"save @{symbol}[cdd]",    f"@{symbol}[cdd]"],
         }
-        self.parameter_table = { k: v for k, v in self.parameter_table.items() if k in self.parameters_to_save }
+        self.parameter_table = self.select_parameters(self.parameter_table)
         vgs_start, vgs_stop, vgs_step = sweep.vgs
         vds_start, vds_stop, vds_step = sweep.vds
         analysis_string = f"dc VDS {vds_start} {vds_stop} {vds_step} VGS {vgs_start} {vgs_stop} {vgs_step}"
         osdi = None
         if self.osdi_paths:
             osdi = "\n".join([f"pre_osdi {p}" for p in self.osdi_paths])
+
+        # Derived vectors are only emitted for requested parameters: a `let`
+        # referencing a device parameter the model does not expose (e.g.
+        # vdssat on a non-BSIM4 model) is an ngspice error even if the
+        # parameter was never saved.
+        derived_vectors = {
+            "id": "let i_vds = abs(i(vds))",
+            "vth": f"let m_vth = {v_sign}abs(@{symbol}[vth])",
+            "vdsat": f"let m_vdsat = {v_sign}abs(@{symbol}[vdsat])",
+            "vdssat": f"let m_vdssat = {v_sign}abs(@{symbol}[vdssat])",
+        }
+        let_lines = [line for p, line in derived_vectors.items() if p in self.parameter_table]
+
         return [
             f".options TEMP = {self.temperature}",
             f".options TNOM = {self.temperature}",
@@ -93,10 +106,7 @@ class NgspiceSimulator(BaseSimulator):
             osdi,
             "\n".join([val[0] for val in self.parameter_table.values()]),
             analysis_string,
-            "let i_vds     = abs(i(vds))",
-            f"let m_vth    = {v_sign}abs(@{symbol}[vth])",
-            f"let m_vdsat  = {v_sign}abs(@{symbol}[vdsat])",
-            f"let m_vdssat = {v_sign}abs(@{symbol}[vdssat])",
+            *let_lines,
             f"write {self.output_file_path} all",
             ".endc",
             ".end",

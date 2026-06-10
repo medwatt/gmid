@@ -2,6 +2,7 @@
 import os
 import shutil
 import subprocess
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any, List
 from .utils import list_to_string
@@ -29,7 +30,9 @@ class BaseSimulator(ABC):
             "parameters_to_save": parameters_to_save,
         }
         self.validate_paths()
-        self.tmp_dir = "/tmp/"
+        # tmp_dir stays None until make_temp_files() creates a private
+        # directory; remove_temp_files() must never delete anything else.
+        self.tmp_dir = None
         self.input_file_path = "input"
         self.output_file_path = "output"
         self.log_file_path = "log"
@@ -62,12 +65,33 @@ class BaseSimulator(ABC):
     def extract_parameters(self, analysis, n_vgs, n_vds):
         pass
 
+    def select_parameters(self, parameter_table: dict) -> dict:
+        """Keep only the parameters the user asked to save, warning about the rest.
+
+        ``parameter_table`` maps every parameter name this backend knows how to
+        extract to its simulator-specific probe/save recipe. Requested names the
+        backend does not support are skipped with a warning instead of producing
+        netlist lines that crash the simulator on PDKs that lack them.
+        """
+        selected = {k: v for k, v in parameter_table.items() if k in self.parameters_to_save}
+        unsupported = [p for p in self.parameters_to_save if p not in parameter_table]
+        if unsupported:
+            warnings.warn(
+                f"{self.__class__.__name__} does not know how to save {unsupported}; "
+                f"these parameters will be skipped. Supported parameters: "
+                f"{sorted(parameter_table)}.",
+                UserWarning,
+                stacklevel=3,
+            )
+        return selected
+
     def clone(self):
         return self.__class__(**self._init_config)
 
     def remove_temp_files(self):
         if self.tmp_dir and os.path.isdir(self.tmp_dir):
             shutil.rmtree(self.tmp_dir)
+            self.tmp_dir = None
 
     def validate_paths(self):
         paths = []

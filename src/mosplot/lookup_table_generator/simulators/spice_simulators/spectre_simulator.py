@@ -71,10 +71,7 @@ class SpectreSimulator(BaseSimulator):
             "css":   f"{symbol}:css",
         }
 
-        self.parameter_table = {
-            k: v for k, v in self.parameter_table.items()
-            if k in self.parameters_to_save
-        }
+        self.parameter_table = self.select_parameters(self.parameter_table)
 
         vgs_start, vgs_stop, vgs_step = sweep.vgs
         vds_start, vds_stop, vds_step = sweep.vds

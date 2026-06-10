@@ -111,7 +111,7 @@ class HspiceSimulator(BaseSimulator):
                 "m_css",
             ],
         }
-        self.parameter_table = { k: v for k, v in self.parameter_table.items() if k in self.parameters_to_save }
+        self.parameter_table = self.select_parameters(self.parameter_table)
         vgs_start, vgs_stop, vgs_step = sweep.vgs
         vds_start, vds_stop, vds_step = sweep.vds
         analysis_string = f".dc VGS {vgs_start} {vgs_stop} {vgs_step} VDS {vds_start} {vds_stop} {vds_step}"
@@ -132,17 +132,18 @@ class HspiceSimulator(BaseSimulator):
         return parse_file(self.output_file_path)
 
     def extract_parameters(self, analysis, n_vgs, n_vds):
+        # Iterate the filtered parameter_table, not parameters_to_save: a
+        # requested parameter this backend does not support must be skipped,
+        # not raise a KeyError.
         results = {}
-        for p in self.parameters_to_save:
-            col_name = self.parameter_table[p][1]
+        for p, (_, col_name) in self.parameter_table.items():
             if col_name in analysis.keys():
                 res = np.array(analysis[col_name]).T
                 results[p] = res
         return results
 
     def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
-        for p in self.parameters_to_save:
-            col_name = self.parameter_table[p][1]
+        for p, (_, col_name) in self.parameter_table.items():
             if col_name in analysis.keys():
                 res = np.array(analysis[col_name]).T
                 lookup_table[transistor_type][p][length][vbs] = res
