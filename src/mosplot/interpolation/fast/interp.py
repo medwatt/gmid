@@ -372,7 +372,7 @@ def _inverse_1d_nb(x, y, target, out_of_range):
       2. For each adjacent pair of finite points, check if y-target
          changes sign.  If so, linearly interpolate the crossing.
       3. Track the point with minimum |y-target| as a fallback for clip.
-      4. out_of_range:  0 → return NaN,  1 → return the closest point.
+      4. out_of_range:  0 -> return NaN,  1 -> return the closest point.
 
     Parameters
     ----------

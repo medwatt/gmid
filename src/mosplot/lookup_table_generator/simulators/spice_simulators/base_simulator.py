@@ -18,7 +18,6 @@ class BaseSimulator(ABC):
         self.mos_spice_symbols = mos_spice_symbols
         self.device_parameters = device_parameters
         self.parameters_to_save = parameters_to_save
-        self.tmp_dir = None
         self._init_config = {
             "raw_spice": raw_spice,
             "temperature": temperature,
@@ -55,10 +54,6 @@ class BaseSimulator(ABC):
 
     @abstractmethod
     def parse_output(self) -> Any:
-        pass
-
-    @abstractmethod
-    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
         pass
 
     @abstractmethod

@@ -8,5 +8,4 @@ eggs/
 *.npy
 *.npz
 *.osdi
-/tests/*
 untracked/

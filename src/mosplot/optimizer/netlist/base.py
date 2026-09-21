@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ..topology.elements import Instance, Passive, VSource
+from ..topology.elements import ISource, Instance, Passive, VSource
 
 
 class NetlistGenerator(ABC):
@@ -19,10 +19,13 @@ class NetlistGenerator(ABC):
         mosfets: list[Instance],
         passives: list[Passive],
         vsources: list[VSource],
+        isources: list[ISource],
         device_map: dict,
         dimensions: dict,
         passive_params: dict[str, float],
         vsource_params: dict[str, float],
+        isource_params: dict[str, float],
         output_path: Path,
+        extra_lines: list[str] | None = None,
     ) -> Path:
         """Write the netlist to output_path and return the path."""

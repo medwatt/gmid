@@ -17,9 +17,9 @@ class HspiceSimulator(BaseSimulator):
         lib_mappings=None,
         include_paths=None,
         simulator_path="hspice",
-        device_parameters={"w": 10e-6},
+        device_parameters=None,
         mos_spice_symbols=("m1", "m1"),
-        parameters_to_save=["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
+        parameters_to_save=None,
     ):
         super().__init__(
                 raw_spice=raw_spice,
@@ -28,8 +28,9 @@ class HspiceSimulator(BaseSimulator):
                 include_paths=include_paths,
                 simulator_path=simulator_path,
                 mos_spice_symbols=mos_spice_symbols,
-                device_parameters=device_parameters,
-                parameters_to_save=parameters_to_save,
+                device_parameters=device_parameters if device_parameters is not None else {"w": 10e-6},
+                parameters_to_save=parameters_to_save if parameters_to_save is not None
+                else ["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
         )
         self.hdl_paths = hdl_paths
         self._init_config["hdl_paths"] = hdl_paths
@@ -132,18 +133,9 @@ class HspiceSimulator(BaseSimulator):
         return parse_file(self.output_file_path)
 
     def extract_parameters(self, analysis, n_vgs, n_vds):
-        # Iterate the filtered parameter_table, not parameters_to_save: a
-        # requested parameter this backend does not support must be skipped,
-        # not raise a KeyError.
         results = {}
         for p, (_, col_name) in self.parameter_table.items():
             if col_name in analysis.keys():
                 res = np.array(analysis[col_name]).T
                 results[p] = res
         return results
-
-    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
-        for p, (_, col_name) in self.parameter_table.items():
-            if col_name in analysis.keys():
-                res = np.array(analysis[col_name]).T
-                lookup_table[transistor_type][p][length][vbs] = res

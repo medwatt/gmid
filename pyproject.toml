@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mosplot"
-version = "0.6.0"
+version = "0.7.0"
 description = "Mosfet plotting and simulation package."
 authors = [
     { name = "Mohamed Watfa", email = "medwatt@hotmail.com" }
@@ -26,5 +26,12 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/medwatt/gmid"
 
+[project.optional-dependencies]
+test = ["pytest"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

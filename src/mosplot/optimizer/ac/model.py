@@ -14,12 +14,25 @@ from .system import LinearSystem
 
 
 InputItems = tuple[tuple[str, float], ...]
+OutputItems = tuple[tuple[str, float], ...]
 
 
-def canonical_inputs(inputs: dict[str, float] | None) -> InputItems:
-    if not inputs:
-        return ()
-    return tuple(sorted((str(node), float(value)) for node, value in inputs.items()))
+def canonical_inputs(inputs: dict[str, float]) -> InputItems:
+    if not isinstance(inputs, dict):
+        raise TypeError("inputs must be a non-empty dict mapping node names to weights.")
+    items = tuple(sorted((node, float(value)) for node, value in inputs.items()))
+    if not items:
+        raise ValueError("At least one AC input must be provided.")
+    return items
+
+
+def canonical_output(output: dict[str, float]) -> OutputItems:
+    if not isinstance(output, dict):
+        raise TypeError("output must be a non-empty dict mapping node names to weights.")
+    items = tuple(sorted((node, float(weight)) for node, weight in output.items()))
+    if not items:
+        raise ValueError("At least one output node must be provided.")
+    return items
 
 
 def _input_value(node: str, inputs: InputItems) -> float:
@@ -109,21 +122,27 @@ class SmallSignalModel:
     def _compile_transfer(
         self,
         inputs: InputItems,
-        out: str,
+        output: OutputItems,
     ) -> CompiledTransfer:
-        """Compile topology for a specific known-node set and output node.
+        """Compile topology for a specific known-node set and output observation.
 
         The same topology can be solved with different input vectors, so the
-        compiled map is cached by input nodes and output. Typical optimizer use
-        has exactly one such tuple, which means this work happens once.
+        compiled map is cached by input nodes and output observation. Typical
+        optimizer use has exactly one such tuple, which means this work happens
+        once.
         """
 
         known_nodes = frozenset(node for node, _ in inputs)
         node_idx = self._node_index(known_nodes)
-        if out not in node_idx:
-            raise ValueError(
-                f"Output node '{out}' is not an unknown node. Unknown nodes: {list(node_idx)}"
-            )
+        out_idx = np.empty(len(output), dtype=np.int64)
+        weights = np.empty(len(output), dtype=float)
+        for i, (node, weight) in enumerate(output):
+            if node not in node_idx:
+                raise ValueError(
+                    f"Output node '{node}' is not an unknown node. Unknown nodes: {list(node_idx)}"
+                )
+            out_idx[i] = node_idx[node]
+            weights[i] = weight
 
         mos_idx, mos_known = _compile_node_maps(node_idx, self.mos_nodes, inputs)
         cap_idx, cap_known = _compile_node_maps(node_idx, self.cap_nodes, inputs)
@@ -133,7 +152,8 @@ class SmallSignalModel:
             mos_known=mos_known,
             cap_idx=cap_idx,
             cap_known=cap_known,
-            out_idx=node_idx[out],
+            out_idx=out_idx,
+            weights=weights,
         )
 
     @lru_cache(maxsize=32)
@@ -186,20 +206,18 @@ class SmallSignalModel:
         cap_values: np.ndarray,
         *,
         inputs: dict[str, float],
-        out: str,
+        output: dict[str, float],
         gbw_iters: int = 32,
     ) -> TransferAnalysis:
         """Create a voltage-transfer analysis for one numeric operating point."""
 
         input_items = canonical_inputs(inputs)
-        if not input_items:
-            raise ValueError("At least one AC input must be provided.")
-
-        compiled = self._compile_transfer(input_items, out)
+        compiled = self._compile_transfer(input_items, canonical_output(output))
         system, rhs_g, rhs_c = self._assemble(mos_values, cap_values, compiled)
         return TransferAnalysis(
             system=system,
             out_idx=compiled.out_idx,
+            weights=compiled.weights,
             rhs_g=rhs_g,
             rhs_c=rhs_c,
             gbw_iters=gbw_iters,

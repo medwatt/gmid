@@ -11,10 +11,11 @@ from .system import LinearSystem
 
 @dataclass
 class TransferAnalysis:
-    """Voltage-transfer analysis with lazily computed metrics."""
+    """Voltage-transfer analysis for a weighted linear output observation."""
 
     system: LinearSystem
-    out_idx: int
+    out_idx: np.ndarray
+    weights: np.ndarray
     rhs_g: np.ndarray
     rhs_c: np.ndarray
     gbw_iters: int = 32
@@ -22,15 +23,50 @@ class TransferAnalysis:
     _gain: float | None = field(default=None, init=False, repr=False)
     _ugf_hz: float | None = field(default=None, init=False, repr=False)
 
+    def __add__(self, other: "TransferAnalysis") -> "TransferAnalysis":
+        """Return a composed transfer that sums this output with another."""
+
+        return _combine_transfers(self, other, 1.0)
+
+    def __sub__(self, other: "TransferAnalysis") -> "TransferAnalysis":
+        """Return a composed transfer that subtracts another output."""
+
+        return _combine_transfers(self, other, -1.0)
+
+    def __mul__(self, scale: float) -> "TransferAnalysis":
+        """Return this transfer scaled by ``scale``."""
+
+        return TransferAnalysis(
+            system=self.system,
+            out_idx=self.out_idx.copy(),
+            weights=self.weights * float(scale),
+            rhs_g=self.rhs_g,
+            rhs_c=self.rhs_c,
+            gbw_iters=self.gbw_iters,
+        )
+
+    def __rmul__(self, scale: float) -> "TransferAnalysis":
+        """Return this transfer scaled by ``scale``."""
+
+        return self.__mul__(scale)
+
+    def __neg__(self) -> "TransferAnalysis":
+        """Return this transfer with inverted sign."""
+
+        return self * -1.0
+
     def gain(self) -> float:
-        """Return the zero-frequency voltage gain."""
+        """Return the zero-frequency voltage gain of the output observation."""
 
         if self._gain is None:
             self._v = self.system.solve_dc(self.rhs_g)
-            self._gain = float(self._v[self.out_idx])
+            gain = 0.0
+            for out_idx, weight in zip(self.out_idx, self.weights):
+                gain += float(weight) * float(self._v[out_idx])
+            self._gain = gain
         return self._gain
 
-    def rejection(self, interference: TransferAnalysis) -> float:
+    def rejection(self, interference: "TransferAnalysis") -> float:
         """Return absolute rejection ratio against another transfer analysis."""
 
         signal = self.gain()
@@ -38,7 +74,7 @@ class TransferAnalysis:
         return abs(signal / interferer) if abs(interferer) > 1e-30 else 1e12
 
     def response(self, frequency_hz: float) -> complex:
-        """Return output response at one frequency in Hz."""
+        """Return the output observation response at one frequency in Hz."""
 
         return solve_response(
             self.system.G,
@@ -46,6 +82,7 @@ class TransferAnalysis:
             self.rhs_g,
             self.rhs_c,
             self.out_idx,
+            self.weights,
             2.0 * np.pi * float(frequency_hz),
         )
 
@@ -64,6 +101,7 @@ class TransferAnalysis:
                     self.rhs_g,
                     self.rhs_c,
                     self.out_idx,
+                    self.weights,
                     self.gbw_iters,
                 )
             )
@@ -81,10 +119,40 @@ class TransferAnalysis:
                 self.rhs_g,
                 self.rhs_c,
                 self.out_idx,
+                self.weights,
                 self.ugf(),
                 self.gain(),
             )
         )
+
+
+def _ensure_compatible(left: TransferAnalysis, right: TransferAnalysis) -> None:
+    if left.system.node_idx != right.system.node_idx:
+        raise ValueError("Cannot compose transfers from different node maps.")
+    if not np.array_equal(left.system.G, right.system.G):
+        raise ValueError("Cannot compose transfers from different conductance matrices.")
+    if not np.array_equal(left.system.C, right.system.C):
+        raise ValueError("Cannot compose transfers from different capacitance matrices.")
+    if not np.array_equal(left.rhs_g, right.rhs_g):
+        raise ValueError("Cannot compose transfers with different input conductance RHS vectors.")
+    if not np.array_equal(left.rhs_c, right.rhs_c):
+        raise ValueError("Cannot compose transfers with different input capacitance RHS vectors.")
+
+
+def _combine_transfers(
+    left: TransferAnalysis,
+    right: TransferAnalysis,
+    right_scale: float,
+) -> TransferAnalysis:
+    _ensure_compatible(left, right)
+    return TransferAnalysis(
+        system=left.system,
+        out_idx=np.concatenate((left.out_idx, right.out_idx)),
+        weights=np.concatenate((left.weights, right.weights * right_scale)),
+        rhs_g=left.rhs_g,
+        rhs_c=left.rhs_c,
+        gbw_iters=max(left.gbw_iters, right.gbw_iters),
+    )
 
 
 @dataclass

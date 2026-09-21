@@ -18,8 +18,8 @@ class SpectreSimulator(BaseSimulator):
         include_paths=None,
         simulator_path="spectre",
         mos_spice_symbols=("M1", "M1"),
-        device_parameters={"w": 10e-6},
-        parameters_to_save=["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
+        device_parameters=None,
+        parameters_to_save=None,
     ):
         super().__init__(
             raw_spice=raw_spice,
@@ -28,8 +28,9 @@ class SpectreSimulator(BaseSimulator):
             include_paths=include_paths,
             simulator_path=simulator_path,
             mos_spice_symbols=mos_spice_symbols,
-            device_parameters=device_parameters,
-            parameters_to_save=parameters_to_save,
+            device_parameters=device_parameters if device_parameters is not None else {"w": 10e-6},
+            parameters_to_save=parameters_to_save if parameters_to_save is not None
+            else ["id", "vth", "vdsat", "gm", "gmbs", "gds", "cgg", "cgs", "cgb", "cgd", "cdd"],
         )
 
     def make_temp_files(self):
@@ -59,9 +60,9 @@ class SpectreSimulator(BaseSimulator):
         self.parameter_table = {
             "id":    id_probe,
             "vth":   f"{symbol}:vth",
-            "vdsat": f"{symbol}:vdsat",
+            "vdsat": (f"{symbol}:vdsat", f"{symbol}:vdss"),  # BSIM: vdsat; PSP: vdss
             "gm":    f"{symbol}:gm",
-            "gmbs":  f"{symbol}:gmbs",
+            "gmbs":  (f"{symbol}:gmbs", f"{symbol}:gmb"),  # BSIM: gmbs; PSP: gmb
             "gds":   f"{symbol}:gds",
             "cgg":   f"{symbol}:cgg",
             "cgs":   f"{symbol}:cgs",
@@ -90,25 +91,17 @@ class SpectreSimulator(BaseSimulator):
 
     def extract_parameters(self, analysis, n_vgs, n_vds):
         results = {}
-        for p, col_name in self.parameter_table.items():
-            try:
-                if len(analysis) == 1:
-                    data = np.array(analysis[0][col_name]).reshape(n_vgs, n_vds)
-                else:
-                    data = np.array([arr[col_name] for arr in analysis])
-                results[p] = data.astype(np.float32)
-            except (KeyError, ValueError):
-                pass
+        for p, names in self.parameter_table.items():
+            # a model may name an output differently: the first name present wins
+            for col_name in (names,) if isinstance(names, str) else names:
+                try:
+                    if len(analysis) == 1:
+                        data = np.array(analysis[0][col_name]).reshape(n_vgs, n_vds)
+                    else:
+                        data = np.array([arr[col_name] for arr in analysis])
+                    results[p] = data.astype(np.float32)
+                    break
+                except (KeyError, ValueError):
+                    pass
         return results
-
-    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
-        for p, col_name in self.parameter_table.items():
-            try:
-                if len(analysis) == 1:
-                    data = np.array(analysis[0][col_name]).reshape(n_vgs, n_vds)
-                else:
-                    data = np.array([arr[col_name] for arr in analysis])
-                lookup_table[transistor_type][p][length][vbs] = data.astype(np.float32)
-            except (KeyError, ValueError):
-                pass
 

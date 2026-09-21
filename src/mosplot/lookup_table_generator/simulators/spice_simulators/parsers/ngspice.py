@@ -38,6 +38,9 @@ def parse_file(fname):
                     plot["varnames"], plot["varunits"] = zip(
                         *[(spec[1], spec[2]) for spec in varspecs]
                     )
+                    # a vector ngspice could not produce (e.g. a parameter the model does
+                    # not have) is written as zeros marked dims=0: drop it, it is not data
+                    empty = {spec[1] for spec in varspecs if "dims=0" in spec[3:]}
                 elif key == b"binary":
                     rowdtype = np.dtype(
                         {
@@ -50,7 +53,8 @@ def parse_file(fname):
                             * nvars,
                         }
                     )
-                    arrs.append(np.fromfile(fp, dtype=rowdtype, count=npoints))
+                    arr = np.fromfile(fp, dtype=rowdtype, count=npoints)
+                    arrs.append(arr[[n for n in arr.dtype.names if n not in empty]] if empty else arr)
                     plots.append(plot.copy())
                     fp.readline()
             else:

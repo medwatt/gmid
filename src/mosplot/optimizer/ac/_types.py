@@ -25,7 +25,8 @@ class CompiledTransfer(NamedTuple):
     mos_known: np.ndarray
     cap_idx: np.ndarray
     cap_known: np.ndarray
-    out_idx: int
+    out_idx: np.ndarray
+    weights: np.ndarray
 
 
 class CompiledPort(NamedTuple):

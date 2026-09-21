@@ -19,12 +19,12 @@ _MODEL_CACHE: dict[
 
 
 def build_ss_model(
-    mosfets:        list[Instance],
-    passives:       list[Passive],
-    vsources:       list[VSource],
-    ss_params:      dict[str, dict[str, float]],
+    mosfets: list[Instance],
+    passives: list[Passive],
+    vsources: list[VSource],
+    ss_params: dict[str, dict[str, float]],
     passive_params: dict[str, float],
-    signal_nodes:   set[str] | frozenset[str] | None = None,
+    signal_nodes: set[str] | frozenset[str] | None = None,
 ) -> SmallSignalSolver:
     """Stamp a SmallSignalSolver from topology and computed per-element parameters.
 
@@ -37,6 +37,8 @@ def build_ss_model(
     """
     signal_nodes = frozenset(signal_nodes or ())
     ac_ground: frozenset[str] = (_SUPPLY_NODES | frozenset(vs.p for vs in vsources)) - signal_nodes
+    # Netlist-only devices (e.g. a bias-mirror replica) carry no small-signal stamp.
+    mosfets = [m for m in mosfets if getattr(m, "in_ss", True)]
 
     def _n(node: str) -> str:
         return "gnd" if node in ac_ground else node
@@ -83,3 +85,36 @@ def build_ss_model(
         np.asarray(mos_values, dtype=float),
         np.asarray(cap_values, dtype=float),
     )
+
+
+def cmfb_loop_sign(
+    model,
+    ref_op,
+    cmfb_node: str,
+    out_nodes,
+    input_nodes=None,
+) -> float:
+    """Return the common-mode feedback loop sign (+1 / -1) for an ideal CMFB.
+
+    The ideal CMFB drives ``cmfb_node`` to hold the average of ``out_nodes`` at a
+    target. The drive must be ``vcmfb = nominal + sign * gain * (target - sensed)``
+    with the right ``sign`` to be negative feedback. ``sign = sign(d V_outcm /
+    d vcmfb)``, computed from the small-signal model: perturb ``cmfb_node`` (with
+    the inputs held at AC ground) and read the common-mode output response.
+    """
+    from .elements import VSource
+
+    pv = dict(model.passive_values(ref_op))
+    for p in model.PASSIVES:
+        if p.name not in pv:
+            pv[p.name] = 0.0  # DC sign is independent of (open) cap values
+    # Hold the differential inputs at AC ground for the CM perturbation.
+    inputs = list(input_nodes if input_nodes is not None else getattr(model, "SIGNAL_NODES", ()))
+    ground_inputs = [VSource(f"_cmfb_gnd{i}", p=n, n="vss") for i, n in enumerate(inputs)]
+    vsources = list(model.VSOURCES) + ground_inputs
+    ss = build_ss_model(
+        model.MOSFETS, model.PASSIVES, vsources, ref_op.ss, pv, signal_nodes={cmfb_node}
+    )
+    out = {n: 1.0 / len(out_nodes) for n in out_nodes}
+    g = ss.transfer(inputs={cmfb_node: 1.0}, output=out).gain()
+    return 1.0 if g >= 0.0 else -1.0

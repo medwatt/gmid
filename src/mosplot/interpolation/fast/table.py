@@ -32,7 +32,7 @@ from typing import Any
 import numpy as np
 
 from .interp import _resample_into, _lookup_scalar_nb, _bracket_vec, _interp4d_nan, _bracket_nb, _curve_for_param_nb
-from mosplot.interpolation.curve import _AXIS_DIMS, _require_strictly_increasing
+from mosplot.interpolation.axes import _AXIS_DIMS, _require_strictly_increasing
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +213,16 @@ class GmIdTable:
             if np.asarray(dev[p]).ndim == 4
             and np.asarray(dev[p]).shape in (expected_std, expected_swp)
         ]
+
+        # The gmid axis itself is built from gm/id, so these two are the only
+        # hard requirements; fail with a clear message instead of a KeyError.
+        missing = sorted({"id", "gm"} - set(param_names))
+        if missing:
+            raise ValueError(
+                f"Lookup table for {device_key!r} is missing {missing}. "
+                f"'id' and 'gm' must be included in parameters_to_save when "
+                f"generating the table; found: {param_names}."
+            )
         all_params = param_names + ["vgs"]
         n_params = len(all_params)
 
@@ -409,8 +419,9 @@ class GmIdTable:
         obj.vds = z["vds"]
         obj.gmid = z["gmid"]
         obj.params = [str(p) for p in z["params"].tolist()]
-        obj._data = {p: z[f"data__{p}"] for p in obj.params}
-        obj._data_stack = np.ascontiguousarray(np.stack([obj._data[p] for p in obj.params], axis=0))
+        obj._data_stack = np.stack([z[f"data__{p}"] for p in obj.params], axis=0)
+        obj._data = {p: obj._data_stack[i] for i, p in enumerate(obj.params)}
+        z.close()
         obj._param_idx = {p: i for i, p in enumerate(obj.params)}
 
         # Same validation as __init__ -- cached axes must still be valid.
@@ -694,12 +705,15 @@ def prebuild_fast_tables(
             compressed=compressed,
             verbose=verbose,
         )
+        # The cache filename includes the data fingerprint, so it must be
+        # recomputed with the same fingerprint build_or_load used.
         paths[device_key] = GmIdTable.cache_path(
             cache_dir,
             device_key,
             n_gmid=n_gmid,
             gmid_bounds=gmid_bounds,
             cache_tag=cache_tag,
+            source_fingerprint=_device_fingerprint(lookup_table, device_key),
         )
 
     return paths

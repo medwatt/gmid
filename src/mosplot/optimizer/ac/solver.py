@@ -134,7 +134,7 @@ class SmallSignalSolver:
         self,
         *,
         inputs: dict[str, float],
-        out: str,
+        output: dict[str, float],
         gbw_iters: int = 32,
     ) -> TransferAnalysis:
         """Create a reusable voltage-transfer analysis."""
@@ -144,7 +144,7 @@ class SmallSignalSolver:
             mos_values,
             cap_values,
             inputs=inputs,
-            out=out,
+            output=output,
             gbw_iters=gbw_iters,
         )
 

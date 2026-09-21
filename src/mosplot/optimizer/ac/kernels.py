@@ -14,10 +14,11 @@ def solve_response(
     C: np.ndarray,
     rhs_g: np.ndarray,
     rhs_c: np.ndarray,
-    out_idx: int,
+    out_idx: np.ndarray,
+    weights: np.ndarray,
     omega: float,
 ) -> complex:
-    """Solve one complex frequency point and return the output voltage.
+    """Solve one complex frequency point and return a weighted output voltage.
 
     The frequency-domain system is:
 
@@ -36,7 +37,11 @@ def solve_response(
         for j in range(n):
             y[i, j] = G[i, j] + 1j * omega * C[i, j]
     solution = np.linalg.solve(y, rhs)
-    return solution[out_idx]
+
+    response = 0.0 + 0.0j
+    for i in range(out_idx.shape[0]):
+        response += weights[i] * solution[out_idx[i]]
+    return response
 
 
 @njit(cache=False)
@@ -45,12 +50,13 @@ def response_mag(
     C: np.ndarray,
     rhs_g: np.ndarray,
     rhs_c: np.ndarray,
-    out_idx: int,
+    out_idx: np.ndarray,
+    weights: np.ndarray,
     omega: float,
 ) -> float:
     """Magnitude of the output response at one radian frequency."""
 
-    return abs(solve_response(G, C, rhs_g, rhs_c, out_idx, omega))
+    return abs(solve_response(G, C, rhs_g, rhs_c, out_idx, weights, omega))
 
 
 @njit(cache=True)
@@ -59,7 +65,8 @@ def find_unity_gain(
     C: np.ndarray,
     rhs_g: np.ndarray,
     rhs_c: np.ndarray,
-    out_idx: int,
+    out_idx: np.ndarray,
+    weights: np.ndarray,
     n_iter: int,
 ) -> float:
     """Return the first unity-gain frequency in Hz.
@@ -89,24 +96,24 @@ def find_unity_gain(
     pole_est = max_g / min_c
     lo = 1e-3
     hi = max(pole_est * 1e3, 1.0)
-    h_lo = response_mag(G, C, rhs_g, rhs_c, out_idx, lo)
+    h_lo = response_mag(G, C, rhs_g, rhs_c, out_idx, weights, lo)
     if h_lo < 1.0:
         return 0.0
 
-    h_hi = response_mag(G, C, rhs_g, rhs_c, out_idx, hi)
+    h_hi = response_mag(G, C, rhs_g, rhs_c, out_idx, weights, hi)
     found_hi = False
     for _ in range(60):
         if h_hi <= 1.0:
             found_hi = True
             break
         hi *= 10.0
-        h_hi = response_mag(G, C, rhs_g, rhs_c, out_idx, hi)
+        h_hi = response_mag(G, C, rhs_g, rhs_c, out_idx, weights, hi)
     if not found_hi:
         return np.inf
 
     for _ in range(n_iter):
         mid = np.sqrt(lo * hi)
-        if response_mag(G, C, rhs_g, rhs_c, out_idx, mid) > 1.0:
+        if response_mag(G, C, rhs_g, rhs_c, out_idx, weights, mid) > 1.0:
             lo = mid
         else:
             hi = mid
@@ -120,7 +127,8 @@ def phase_margin(
     C: np.ndarray,
     rhs_g: np.ndarray,
     rhs_c: np.ndarray,
-    out_idx: int,
+    out_idx: np.ndarray,
+    weights: np.ndarray,
     gbw_hz: float,
     dc_gain: float,
 ) -> float:
@@ -149,7 +157,7 @@ def phase_margin(
         else:
             omega = np.exp(log_ref + (log_unity - log_ref) * i / (n_points - 1))
 
-        h = solve_response(G, C, rhs_g, rhs_c, out_idx, omega)
+        h = solve_response(G, C, rhs_g, rhs_c, out_idx, weights, omega)
         phase = np.angle(h / dc_gain)
         delta = phase - prev_phase
         while delta > np.pi:

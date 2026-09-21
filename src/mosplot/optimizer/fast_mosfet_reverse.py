@@ -43,10 +43,10 @@ def _expression_curve(
     """Evaluate one Expression over a 1-D curve along the solved axis.
 
     Each variable in the expression is resolved in order:
-      1. If it's a raw table parameter (e.g. "id", "gm") → raw_curves[var]
+      1. If it's a raw table parameter (e.g. "id", "gm") -> raw_curves[var]
          (a 1-D NumPy array over the axis points).
-      2. If it's the solved axis itself → axis (the x-values).
-      3. If it's a fixed axis → a constant array np.full_like(axis, value).
+      2. If it's the solved axis itself -> axis (the x-values).
+      3. If it's a fixed axis -> a constant array np.full_like(axis, value).
 
     The expression must support vectorized NumPy inputs -- an Expression
     designed for scalar forward lookup will raise ValueError here.
@@ -85,7 +85,7 @@ def _expression_curve(
 
     y = np.asarray(y, dtype=float)
 
-    # Scalar result → broadcast to match the axis.
+    # Scalar result -> broadcast to match the axis.
     if y.shape == ():
         return np.full_like(axis, float(y), dtype=float)
 
@@ -119,12 +119,12 @@ def _lookup_axis_for_impl(
       1. Validate inputs (single expression, known axis, solved axis omitted).
       2. Collect raw table parameters needed by the expression.
       3. Extract 1-D curves via GmIdTable.lookup_curve.
-      4. Evaluate the expression over the curve → y(axis).
+      4. Evaluate the expression over the curve -> y(axis).
       5. Solve y(axis) == target via inverse solver.
 
     Two solvers are available (see FastMosfet.lookup_axis_for docstring):
-      method="scan" → Python _inverse_1d (full-featured, all modes/warnings)
-      method="fast" → Numba _inverse_1d_nb (~4× faster, restricted options)
+      method="scan" -> Python _inverse_1d (full-featured, all modes/warnings)
+      method="fast" -> Numba _inverse_1d_nb (~4× faster, restricted options)
     """
 
     # ── validate inputs ──
@@ -194,64 +194,6 @@ def _lookup_axis_for_impl(
         oor = 1 if out_of_range == "clip" else 0
         return _inverse_1d_nb(axis, y, target, oor)
 
-    return _inverse_1d(
-        axis,
-        y,
-        target,
-        mode=mode,
-        out_of_range=out_of_range,
-        warn_multiple=warn_multiple,
-    )
-
-    if solve_for not in _AXIS_NAMES:
-        raise ValueError(
-            f"Unknown solve axis: {solve_for!r}. Must be one of {sorted(_AXIS_NAMES)}."
-        )
-
-    values = {
-        "length": length,
-        "gmid": gmid,
-        "vds": vds,
-        "vbs": vbs,
-    }
-
-    if values[solve_for] is not None:
-        raise ValueError(f"Axis {solve_for!r} is being solved for and must not be provided.")
-
-    # ── extract 1-D curves for raw parameters needed by the expression ──
-    needed = sorted(set(expression.variables) - _AXIS_NAMES)
-
-    axis, raw_curves = self._table.lookup_curve(
-        solve_for=solve_for,
-        params=needed,
-        length=length,
-        gmid=gmid,
-        vds=vds,
-        vbs=vbs,
-    )
-
-    # ── evaluate the expression along the curve ──
-    y = _expression_curve(
-        solve_for=solve_for,
-        expression=expression,
-        axis=axis,
-        raw_curves=raw_curves,
-        length=length,
-        gmid=gmid,
-        vds=vds,
-        vbs=vbs,
-    )
-
-    # # ── solve y(axis) == target ──
-    #
-    # Fast path: the optimizer's typical call -- monotonically varying
-    # expression (e.g. JD vs gmid), single expected crossing, no need
-    # for multiple-crossing warnings.  Uses the Numba JIT inverse (<30 µs).
-    if mode == "first" and out_of_range in ("clip", "nan") and not warn_multiple:
-        oor = 1 if out_of_range == "clip" else 0
-        return _inverse_1d_nb(axis, y, target, oor)
-
-    # General path: full mode/out-of_range/warning support.
     return _inverse_1d(
         axis,
         y,

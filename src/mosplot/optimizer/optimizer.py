@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from typing import Any
+from operator import index
 import numpy as np
 import numpy.typing as npt
 import cma
 from scipy.optimize import OptimizeResult, minimize
-from .corners import CornerResult, evaluate_corners, worst_case_specs
-from .datatypes import OptimizationParameter, Spec
+from .evaluate import (
+    CornerResult,
+    check_square,
+    evaluate_corners,
+    recorner,
+    size_reference,
+    worst_case,
+)
+from .datatypes import Knob, Spec
 
 
 _SOFTPLUS_LIN_THRESHOLD = 20.0
@@ -19,30 +27,61 @@ def _softplus(x: float, beta: float = 20.0) -> float:
     return float(np.log1p(np.exp(beta * x)) / beta)
 
 
+def _resolve_knobs(model, config_knobs: list[Knob]) -> list[Knob]:
+    """Merge the circuit's structural knobs (roles, no bounds) with the config's bounds.
+
+    Roles and sets_width_of come from the circuit (physics); bounds come from the config
+    (PDK/spec). This is what lets a circuit file carry zero numeric constants.
+    """
+    roles = {k.name: (k.role, k.sets_width_of, k.recorner_bound) for k in model.KNOBS}
+    merged = []
+    for ck in config_knobs:
+        if ck.bound is None:
+            raise ValueError(f"knob {ck.name!r} has no bound; set it in the config PARAMETERS.")
+        role, sets_width_of, rb = roles.get(ck.name, (ck.role, ck.sets_width_of, None))
+        merged.append(Knob(ck.name, ck.bound, role, sets_width_of, ck.recorner_bound or rb))
+    return merged
+
+
 class Optimizer:
     """Optimizes a circuit design using CMA-ES followed by SLSQP polishing."""
 
     def __init__(
         self,
-        circuits: Any | list[Any],
-        parameters: list[OptimizationParameter],
+        model: Any,
+        parameters: list[Knob] | None,
         target_specs: dict[str, Spec],
-        corner_names: list[str] | None = None,
+        corners: list[Any],
+        ref_index: int = 0,
         executor: Any = None,
     ) -> None:
-        self.circuits: list[Any] = circuits if isinstance(circuits, list) else [circuits]
-        self.corner_names: list[str] = (
-            corner_names
-            if corner_names is not None
-            else [f"corner_{i}" for i in range(len(self.circuits))]
+        self.model = model
+        # Merge config bounds onto the circuit's structural roles, then make the resolved
+        # knobs the single source of truth for both the optimizer and the evaluator.
+        self.parameters = _resolve_knobs(
+            model, parameters if parameters is not None else model.KNOBS
         )
-        self.executor = executor
-        self.parameters = parameters
+        model.KNOBS = self.parameters
+        for key, spec in target_specs.items():
+            if spec.scale is None and (spec.target <= 0 if spec.mode != "eq" else spec.target == 0):
+                raise ValueError(f"spec {key!r}: a target of {spec.target} has no relative scale; "
+                                 f"give the Spec a `scale` (in the spec's unit).")
         self.target_specs = target_specs
+        self.corners = corners
+        self.ref_index = ref_index
+        # A non-square multicorner re-solve fails silently (every corner looks infeasible):
+        # check the equation count once, at the middle of the search box (of a discrete set).
+        mid = {k.name: (0.5 * (k.bound[0] + k.bound[1]) if isinstance(k.bound, tuple)
+                        else float(np.asarray(k.bound)[len(k.bound) // 2])) for k in self.parameters}
+        check_square(model, mid, corners, ref_index)
+        self.executor = executor
         self.opt_params: dict[str, float] | None = None
         self.result: OptimizeResult | None = None
         self.corner_results: list[CornerResult] | None = None
         self.binding: dict[str, str] | None = None
+        # Populated by _run_corner_analysis for the netlist writer / report.
+        self.frozen: dict | None = None
+        self.reference_op: Any = None
 
     def compute_cost(self, specs: dict[str, float]) -> float:
         """
@@ -64,20 +103,29 @@ class Optimizer:
                 continue
             target = spec.target
 
+            relative = spec.scale is None      # validated in __init__: then target > 0 or eq != 0
+            scale = abs(target) if relative else spec.scale
+
             if spec.mode == "min":
-                raw = (actual - target) / target
+                raw = (actual - target) / scale
                 violation = _softplus(raw)
-                secondary = max(0.0, actual / target)
+                secondary = max(0.0, 1.0 + raw)      # = actual/target for a relative spec
                 cost += spec.weight * (violation**2 + 0.05 * secondary)
 
             elif spec.mode == "max":
-                ratio = target / actual if actual > 0 else np.inf
-                raw = float(np.log(ratio)) if np.isfinite(ratio) else 100.0
+                if relative:
+                    # log(target/actual), continued linearly (value and slope matched) below
+                    # target/e, so a zero or negative actual is graded instead of a cliff
+                    knee = target / np.e
+                    raw = (float(np.log(target / actual)) if actual >= knee
+                           else 2.0 - np.e * actual / target)
+                else:
+                    raw = (target - actual) / scale
                 violation = _softplus(raw)
                 cost += spec.weight * (violation**2)
 
             elif spec.mode == "eq":
-                raw = (actual - target) / abs(target)
+                raw = (actual - target) / scale
                 cost += spec.weight * (raw**2)
 
         return cost
@@ -93,13 +141,28 @@ class Optimizer:
                 params[param.name] = float(x[i])
         return params
 
+    # Infeasible designs return a penalty ABOVE this floor, GRADED by how badly the DC solve
+    # missed convergence. A flat penalty would make every failed candidate identical, leaving
+    # CMA-ES unable to rank a failed population and stalling it on a plateau; grading by the
+    # residual gives a gradient back toward the region where the operating point solves.
+    _INFEASIBLE_FLOOR = 1e6
+
     def _objective(self, x: list[float] | npt.NDArray) -> float:
-        params = self._transform_params(x)
-        all_specs = evaluate_corners(self.circuits, params)
-        corner_specs = list(zip(self.corner_names, all_specs))
-        worst, _ = worst_case_specs(corner_specs, self.target_specs)
+        knobs = self._transform_params(x)
+        results = evaluate_corners(self.model, knobs, self.corners, self.ref_index)
+
+        infeasible = 0.0
+        for r in results:
+            if r is None:
+                infeasible += 10.0  # solve raised / no operating point
+            elif r.max_residual > 1e-3:
+                infeasible += min(r.max_residual, 10.0)  # solver did not converge here
+        if infeasible > 0.0:
+            return self._INFEASIBLE_FLOOR * (1.0 + infeasible)
+
+        worst, _ = worst_case(results, self.target_specs)
         if not worst:
-            return 1e6
+            return self._INFEASIBLE_FLOOR
         return self.compute_cost(worst)
 
     def _get_bounds(self) -> list[tuple[float, float]]:
@@ -120,6 +183,7 @@ class Optimizer:
         maxiter: int,
         sigma0: float,
         seed: int,
+        pool=None,
     ) -> tuple[npt.NDArray, float, int]:
         n = len(lbs)
 
@@ -136,25 +200,42 @@ class Optimizer:
         opts["tolfun"] = 1e-5
 
         es = cma.CMAEvolutionStrategy(x0_norm, sigma0, opts)
-        es.optimize(objective_normalised)
+        if pool is None:
+            es.optimize(objective_normalised)
+        else:
+            from .parallel import objective
+
+            while not es.stop() or es.countiter == 0:
+                candidates = es.ask()
+                costs = list(pool.map(objective, [lbs + x * (ubs - lbs) for x in candidates]))
+                es.tell(candidates, costs)
+                es.disp()
 
         best_x = lbs + es.result.xbest * (ubs - lbs)
         return best_x, float(es.result.fbest), int(es.result.iterations)
 
     def _run_corner_analysis(self) -> None:
-        """Evaluate all corners once at the optimum and store results."""
+        """Re-evaluate every corner at the optimum, freezing the reference geometry, and
+        store the per-corner results plus the frozen design for the netlist writer."""
         opt_params = self.get_opt_params()
-        all_specs = evaluate_corners(self.circuits, opt_params)
-        self.corner_results = [
-            CornerResult(
-                name=name,
-                specs=specs,
-                cost=self.compute_cost(specs) if specs else float("inf"),
-            )
-            for name, specs in zip(self.corner_names, all_specs)
-        ]
-        corner_specs = list(zip(self.corner_names, all_specs))
-        _, self.binding = worst_case_specs(corner_specs, self.target_specs)
+        ref = self.corners[self.ref_index]
+        ref_res, frozen = size_reference(self.model, opt_params, ref)
+
+        results: list[CornerResult | None] = [None] * len(self.corners)
+        results[self.ref_index] = ref_res
+        for i, corner in enumerate(self.corners):
+            if i == self.ref_index:
+                continue
+            results[i] = recorner(self.model, frozen, corner)
+
+        for r in results:
+            if r is not None:
+                r.cost = self.compute_cost(r.specs) if r.specs else float("inf")
+
+        self.corner_results = results
+        self.frozen = frozen
+        self.reference_op = ref_res.op
+        _, self.binding = worst_case(results, self.target_specs)
 
     def optimize(
         self,
@@ -162,6 +243,7 @@ class Optimizer:
         sigma0: float = 0.3,
         n_restarts: int = 1,
         seed: int = 42,
+        workers: int = 1,
     ) -> OptimizeResult:
         """
         Run CMA-ES (with optional random restarts) then polish with SLSQP.
@@ -173,7 +255,19 @@ class Optimizer:
                 centre of the search space; subsequent ones from random points. Increase
                 beyond 1 only if results are inconsistent across runs (multimodal landscape).
             seed: Base random seed; restart i uses seed + i for reproducibility.
+            workers: CMA-ES worker processes. 1 runs serially; larger values share lookup
+                arrays using spawn. Call under an ``if __name__ == "__main__":`` guard.
         """
+        from .parallel import objective_pool
+
+        if isinstance(workers, bool):
+            raise ValueError("workers must be a positive integer")
+        try:
+            workers = index(workers)
+        except TypeError as exc:
+            raise ValueError("workers must be a positive integer") from exc
+        if workers < 1:
+            raise ValueError("workers must be a positive integer")
         bounds = self._get_bounds()
         lbs = np.array([b[0] for b in bounds], dtype=float)
         ubs = np.array([b[1] for b in bounds], dtype=float)
@@ -183,14 +277,15 @@ class Optimizer:
         best_cost = np.inf
         total_iters = 0
 
-        for i in range(n_restarts):
-            x0_norm = np.full(len(bounds), 0.5) if i == 0 else rng.uniform(0.1, 0.9, len(bounds))
-            print(f"\n--- CMA-ES restart {i + 1}/{n_restarts} ---")
-            x, cost, iters = self._run_cma(x0_norm, lbs, ubs, maxiter, sigma0, seed + i)
-            total_iters += iters
-            if cost < best_cost:
-                best_cost = cost
-                best_x = x
+        with objective_pool(self, workers) as pool:
+            for i in range(n_restarts):
+                x0_norm = np.full(len(bounds), 0.5) if i == 0 else rng.uniform(0.1, 0.9, len(bounds))
+                print(f"\n--- CMA-ES restart {i + 1}/{n_restarts} ---")
+                x, cost, iters = self._run_cma(x0_norm, lbs, ubs, maxiter, sigma0, seed + i, pool)
+                total_iters += iters
+                if cost < best_cost:
+                    best_cost = cost
+                    best_x = x
 
         print(f"\nBest CMA-ES cost across {n_restarts} restart(s): {best_cost:.6g}")
         print("Polishing with SLSQP...")

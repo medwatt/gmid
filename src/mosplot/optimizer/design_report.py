@@ -4,7 +4,6 @@ from mosplot.util.format import si, si_area
 from .optimizer import Optimizer
 
 
-
 def _format_spec(key: str, value: float | None) -> str:
     if key == "Area":
         return si_area(value)
@@ -33,10 +32,9 @@ class DesignReport:
     def report(self) -> str:
         lines: list[str] = []
         opt = self.optimizer
-        nominal = opt.circuits[0]
 
-        # --- Transistor dimensions (from the first corner) ---
-        dims = getattr(nominal, "device_dimensions", None)
+        # --- Transistor dimensions (from the frozen reference design) ---
+        dims = opt.frozen.get("dims") if opt.frozen else None
         lines.append("\nTransistor Details:")
         if dims:
             for device, item in dims.items():
@@ -53,7 +51,7 @@ class DesignReport:
 
         # --- Per-corner spec table ---
         lines.append("\nCorner Results:")
-        corner_results = opt.corner_results
+        corner_results = [r for r in (opt.corner_results or []) if r is not None and r.specs]
         binding = opt.binding or {}
         target_specs = opt.target_specs
 
@@ -75,7 +73,11 @@ class DesignReport:
                 for i, name in enumerate(corner_names)
             ]
             tgt_w = max(
-                (max(len(_format_target(k, target_specs[k])) for k in target_specs) if target_specs else 0),
+                (
+                    max(len(_format_target(k, target_specs[k])) for k in target_specs)
+                    if target_specs
+                    else 0
+                ),
                 len("Target"),
             )
             bind_w = max(
@@ -92,10 +94,13 @@ class DesignReport:
                 return "".join(parts)
 
             sep = (
-                "  " + "-" * key_w
+                "  "
+                + "-" * key_w
                 + "".join("-+-" + "-" * w for w in col_ws)
-                + "-+-" + "-" * tgt_w
-                + "-+-" + "-" * bind_w
+                + "-+-"
+                + "-" * tgt_w
+                + "-+-"
+                + "-" * bind_w
             )
 
             lines.append(row_line("Spec", corner_names, "Target", "Binding"))

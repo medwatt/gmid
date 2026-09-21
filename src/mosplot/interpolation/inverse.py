@@ -155,7 +155,7 @@ def _inverse_1d(
             d0 = diff[i]
             d1 = diff[i + 1]
 
-            if d0 * d1 < 0.0:                     # opposite signs → crossing
+            if d0 * d1 < 0.0:                     # opposite signs -> crossing
                 y0 = ys[i]
                 y1 = ys[i + 1]
 

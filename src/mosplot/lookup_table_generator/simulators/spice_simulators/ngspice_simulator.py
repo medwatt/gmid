@@ -19,8 +19,8 @@ class NgspiceSimulator(BaseSimulator):
         osdi_paths=None,
         simulator_path="ngspice",
         mos_spice_symbols=("m1", "m1"),
-        device_parameters={"w": 10e-6},
-        parameters_to_save=["weff", "id", "vth", "vdsat", "vdssat", "gm", "gmbs", "gds", "cgg", "cgs", "cbg", "cgd", "cdd"],
+        device_parameters=None,
+        parameters_to_save=None,
     ):
         super().__init__(
                 raw_spice=raw_spice,
@@ -29,8 +29,9 @@ class NgspiceSimulator(BaseSimulator):
                 include_paths=include_paths,
                 simulator_path=simulator_path,
                 mos_spice_symbols=mos_spice_symbols,
-                device_parameters=device_parameters,
-                parameters_to_save=parameters_to_save,
+                device_parameters=device_parameters if device_parameters is not None else {"w": 10e-6},
+                parameters_to_save=parameters_to_save if parameters_to_save is not None
+                else ["weff", "id", "vth", "vdsat", "vdssat", "gm", "gmbs", "gds", "cgg", "cgs", "cbg", "cgd", "cdd"],
         )
         self.osdi_paths = osdi_paths
         self._init_config["osdi_paths"] = osdi_paths
@@ -68,10 +69,10 @@ class NgspiceSimulator(BaseSimulator):
             "id":     ["save i(vds)",             "i(i_vds)"],
             "weff":   [f"save @{symbol}[weff]",   f"v(@{symbol}[weff])"],
             "vth":    [f"save @{symbol}[vth]",    "v(m_vth)"],
-            "vdsat":  [f"save @{symbol}[vdsat]",  "v(m_vdsat)"],
+            "vdsat":  [f"save @{symbol}[vdsat] @{symbol}[vdss]", ("v(m_vdsat)", "v(m_vdss)")],  # BSIM: vdsat; PSP: vdss
             "vdssat": [f"save @{symbol}[vdssat]", "v(m_vdssat)"],
             "gm":     [f"save @{symbol}[gm]",     f"@{symbol}[gm]"],
-            "gmbs":   [f"save @{symbol}[gmbs]",   f"@{symbol}[gmbs]"],
+            "gmbs":   [f"save @{symbol}[gmbs] @{symbol}[gmb]", (f"@{symbol}[gmbs]", f"@{symbol}[gmb]")],  # BSIM: gmbs; PSP: gmb
             "gds":    [f"save @{symbol}[gds]",    f"@{symbol}[gds]"],
             "cgg":    [f"save @{symbol}[cgg]",    f"@{symbol}[cgg]"],
             "cgs":    [f"save @{symbol}[cgs]",    f"@{symbol}[cgs]"],
@@ -87,14 +88,13 @@ class NgspiceSimulator(BaseSimulator):
         if self.osdi_paths:
             osdi = "\n".join([f"pre_osdi {p}" for p in self.osdi_paths])
 
-        # Derived vectors are only emitted for requested parameters: a `let`
-        # referencing a device parameter the model does not expose (e.g.
-        # vdssat on a non-BSIM4 model) is an ngspice error even if the
-        # parameter was never saved.
+        # Derived vectors are only emitted for requested parameters. A `let` on a
+        # device parameter the model does not expose (vdssat on a non-BSIM4 model,
+        # vdsat on PSP) prints an error; ngspice skips it and the run continues.
         derived_vectors = {
             "id": "let i_vds = abs(i(vds))",
             "vth": f"let m_vth = {v_sign}abs(@{symbol}[vth])",
-            "vdsat": f"let m_vdsat = {v_sign}abs(@{symbol}[vdsat])",
+            "vdsat": f"let m_vdsat = {v_sign}abs(@{symbol}[vdsat])\nlet m_vdss = {v_sign}abs(@{symbol}[vdss])",
             "vdssat": f"let m_vdssat = {v_sign}abs(@{symbol}[vdssat])",
         }
         let_lines = [line for p, line in derived_vectors.items() if p in self.parameter_table]
@@ -120,18 +120,10 @@ class NgspiceSimulator(BaseSimulator):
         results = {}
         column_names = analysis[0].dtype.names
         data = analysis[0]
-        for p in self.parameter_table.keys():
-            col_name = self.parameter_table[p][1]
-            if col_name in column_names:
-                res = np.array(data[col_name]).reshape(n_vgs, n_vds)
-                results[p] = res
+        for p, (_, names) in self.parameter_table.items():
+            # a model may name an output differently: the first name present wins
+            for col_name in (names,) if isinstance(names, str) else names:
+                if col_name in column_names:
+                    results[p] = np.array(data[col_name]).reshape(n_vgs, n_vds)
+                    break
         return results
-
-    def save_parameters(self, analysis, transistor_type, length, vbs, lookup_table, n_vgs, n_vds):
-        column_names = analysis[0].dtype.names
-        data = analysis[0]
-        for p in self.parameter_table.keys():
-            col_name = self.parameter_table[p][1]
-            if col_name in column_names:
-                res = np.array(data[col_name]).reshape(n_vgs, n_vds)
-                lookup_table[transistor_type][p][length][vbs] = res

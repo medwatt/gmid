@@ -3,10 +3,8 @@ import numpy as np
 from multiprocessing import Process, Queue
 from .spice_mosfet_netlist_generator import SpiceMosfetNetlistGenerator
 from .spectre_mosfet_netlist_generator import SpectreMosfetNetlistGenerator
-from .ngspice_simulator import NgspiceSimulator
-from .hspice_simulator import HspiceSimulator
 from .spectre_simulator import SpectreSimulator
-from .utils import list_to_string
+from .utils import list_to_string, sweep_axis
 # >>>
 
 # worker <<<
@@ -74,9 +72,9 @@ class MosfetSimulation:
         # Initialize lookup table.
         self.lookup_table = {}
         for mosfet_model, sweep in self.sweeps.items():
-            n_vgs = int(round((sweep.vgs[1] - sweep.vgs[0]) / sweep.vgs[2])) + 1
-            n_vds = int(round((sweep.vds[1] - sweep.vds[0]) / sweep.vds[2])) + 1
-            n_vbs = int(round((sweep.vbs[1] - sweep.vbs[0]) / sweep.vbs[2])) + 1
+            n_vgs = len(sweep_axis(sweep.vgs))
+            n_vds = len(sweep_axis(sweep.vds))
+            n_vbs = len(sweep_axis(sweep.vbs))
             self.lookup_table[mosfet_model] = {
                 p: np.zeros((len(sweep.length), n_vbs, n_vgs, n_vds), dtype=np.float32)
                 for p in simulator.parameters_to_save
@@ -89,8 +87,7 @@ class MosfetSimulation:
         # Select the first transistor sweep for a sample netlist.
         transistor_name, sweep = next(iter(self.sweeps.items()))
         length = sweep.length[0]
-        n_vbs = int(round((sweep.vbs[1] - sweep.vbs[0]) / sweep.vbs[2])) + 1
-        vbs_val = np.linspace(sweep.vbs[0], sweep.vbs[1], n_vbs)[0]
+        vbs_val = sweep_axis(sweep.vbs)[0]
 
         # Make netlist.
         netlist = self.netlist_generator.generate_netlist(transistor_name, length, vbs_val)
@@ -129,10 +126,9 @@ class MosfetSimulation:
         # Build job list.
         jobs = []
         for transistor_name, sweep in self.sweeps.items():
-            n_vgs = int(round((sweep.vgs[1] - sweep.vgs[0]) / sweep.vgs[2])) + 1
-            n_vds = int(round((sweep.vds[1] - sweep.vds[0]) / sweep.vds[2])) + 1
-            n_vbs = int(round((sweep.vbs[1] - sweep.vbs[0]) / sweep.vbs[2])) + 1
-            vbs_values = np.linspace(sweep.vbs[0], sweep.vbs[1], n_vbs)
+            n_vgs = len(sweep_axis(sweep.vgs))
+            n_vds = len(sweep_axis(sweep.vds))
+            vbs_values = sweep_axis(sweep.vbs)
             for l_idx, length in enumerate(sweep.length):
                 for vbs_idx, vbs_val in enumerate(vbs_values):
                     jobs.append((transistor_name, l_idx, vbs_idx, length, vbs_val, sweep, n_vgs, n_vds))

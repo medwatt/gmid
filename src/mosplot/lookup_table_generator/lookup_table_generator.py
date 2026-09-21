@@ -4,6 +4,7 @@ import os
 import numpy as np
 
 from .simulators.spice_simulators.mosfet_simulation import MosfetSimulation
+from .simulators.spice_simulators.utils import sweep_axis
 from .table_cleanup import LookupTableCleaner
 
 # >>>
@@ -31,10 +32,6 @@ class LookupTableGenerator:
         simulation.op_simulation()
 
     def build(self, filepath):
-        def range_args(tup):
-            n = int(round((tup[1] - tup[0]) / tup[2])) + 1
-            return np.linspace(tup[0], tup[1], n)
-
         # Create MosfetSimulation instance.
         simulation = MosfetSimulation(
             self.simulator,
@@ -44,34 +41,34 @@ class LookupTableGenerator:
 
         # Run all simulation jobs with progress updates.
         simulation.simulate()
-        loopup_table = simulation.lookup_table
+        lookup_table = simulation.lookup_table
         parameters_to_save = [key.lower() for key in self.simulator.parameters_to_save]
         device_parameters = {key.lower(): value for key, value in self.simulator.device_parameters.items()}
 
         # Cleanup table to remove entries for parameters that were not found
         # or parameters that have a constant value throughout.
-        cleaner = LookupTableCleaner(loopup_table, parameters_to_save)
+        cleaner = LookupTableCleaner(lookup_table, parameters_to_save)
         cleaner.clean_lookup_table()
 
         # Store general and grid information.
-        loopup_table["description"] = self.description
-        loopup_table["simulator"] = self.simulator.__class__.__name__
-        loopup_table["parameter_names"] = parameters_to_save
-        loopup_table["device_parameters"] = device_parameters
+        lookup_table["description"] = self.description
+        lookup_table["simulator"] = self.simulator.__class__.__name__
+        lookup_table["parameter_names"] = parameters_to_save
+        lookup_table["device_parameters"] = device_parameters
         for transistor_name, sweep in self.model_sweeps.items():
             per_transistor_params = dict(device_parameters)
             per_transistor_params.update(cleaner.scalar_params.get(transistor_name, {}))
-            loopup_table[transistor_name]["vgs"] = range_args(sweep.vgs)
-            loopup_table[transistor_name]["vds"] = range_args(sweep.vds)
-            loopup_table[transistor_name]["vbs"] = range_args(sweep.vbs)
-            loopup_table[transistor_name]["length"] = np.array(sweep.length)
-            loopup_table[transistor_name]["model_name"] = transistor_name
-            loopup_table[transistor_name]["parameter_names"] = parameters_to_save
-            loopup_table[transistor_name]["device_parameters"] = per_transistor_params
+            lookup_table[transistor_name]["vgs"] = sweep_axis(sweep.vgs)
+            lookup_table[transistor_name]["vds"] = sweep_axis(sweep.vds)
+            lookup_table[transistor_name]["vbs"] = sweep_axis(sweep.vbs)
+            lookup_table[transistor_name]["length"] = np.array(sweep.length)
+            lookup_table[transistor_name]["model_name"] = transistor_name
+            lookup_table[transistor_name]["parameter_names"] = parameters_to_save
+            lookup_table[transistor_name]["device_parameters"] = per_transistor_params
 
         directory = os.path.dirname(filepath)
         if directory and not os.path.exists(directory):
             os.makedirs(directory)
 
-        np.savez_compressed(f"{filepath}.npz", lookup_table=np.array(loopup_table, dtype=object))
+        np.savez_compressed(f"{filepath}.npz", lookup_table=np.array(lookup_table, dtype=object))
         print("Done")
