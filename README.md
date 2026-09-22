@@ -1,34 +1,24 @@
 # Mosplot
 
-**Mosplot** is a Python framework for analog circuit design based on the **$\mathrm{gm}/I_D$
-methodology**. It characterizes MOS transistors through circuit simulation,
-provides design charts derived from the resulting data, and performs automated
-multicorner sizing of complete circuits.
+Mosplot is a Python framework for analog circuit design using the gm/ID
+methodology. It characterizes MOS transistors by simulation, builds design
+charts from the resulting data, and sizes complete circuits automatically across
+process corners.
 
 ![Examples of charts produced with Mosplot](docs/figures/overview.svg)
 
-## Overview
+The flow has three parts.
 
-The framework consists of three components.
-
-### 1. Lookup table generation
-
-A DC sweep over channel length and terminal voltages is performed with
-**ngspice**, **HSPICE**, or **Spectre**. The operating-point parameters of the
-device (drain current, transconductances, output conductance, and capacitances)
-are stored in a single lookup table. One table is generated per technology and
-process corner.
-
-The simulator configuration, sweep definition, supported parameters, and
-generation of corner tables are described in [Lookup table
+**Lookup table generation.** A DC sweep over length and terminal voltages is run
+with **ngspice**, **HSPICE**, or **Spectre**. The operating-point parameters
+(drain current, transconductances, output conductance, capacitances) are saved
+to one table per technology and corner. See [lookup table
 generation](docs/lookup_tables.md).
 
-### 2. Design charts
-
-The conventional $\mathrm{gm}/I_D$ design flow is supported directly. Current
-density, transit frequency, intrinsic gain, or any user-defined expression can
-be plotted against $\mathrm{gm}/I_D$ for each channel length, and exact values
-at any operating point are obtained by interpolation on the lookup table.
+**Design charts.** Current density, transit frequency, intrinsic gain, or any
+user expression can be plotted against gm/ID for each length, and exact values
+at an operating point are obtained by interpolation on the table. See [design
+charts](docs/plotting.md).
 
 ```python
 nmos = Mosfet(lookup_table=lookup_table, mos="nmos", vbs=0.0, vds=0.6)
@@ -39,28 +29,18 @@ nmos.plot_by_expression(
 )
 ```
 
-The available expressions and plotting functions are described in
-[Design charts](docs/plotting.md).
-
-### 3. Circuit optimization
-
-A circuit is described once as a system of equations formulated in terms of
-lookups into the pre-characterized table. The optimizer sizes the circuit
-against the target specifications at all process corners simultaneously, reports
-the performance at each corner, and generates a netlist for verification by
-simulation.
-
-Ready-made designs are included for single-ended and fully differential
-amplifiers, current mirrors, and reference circuits. Using one of them in a new
-technology requires only a configuration file with the lookup tables, operating
-conditions, and target specifications. The list of designs, their use, and the
-procedure for writing a new design are described in
-[Circuit optimization](docs/optimization.md).
+**Circuit optimization.** A circuit is described once as a system of equations
+formulated with lookups into the table. The optimizer sizes it against the
+targets at all corners simultaneously, reports the performance at each corner,
+and writes a netlist for verification by simulation. Ready-made designs are
+included for amplifiers, current mirrors, and reference circuits; using one in
+a new technology needs only a configuration file with the tables, operating
+conditions, and targets. See [circuit optimization](docs/optimization.md).
 
 ## Installation
 
-Python 3.9 or later is required. Lookup table generation additionally requires
-one of the supported simulators (ngspice, HSPICE, or Spectre).
+Python 3.9 or later. Lookup table generation additionally requires one of the
+supported simulators (ngspice, HSPICE, or Spectre).
 
 ```bash
 pip install git+https://github.com/medwatt/gmid.git
@@ -76,7 +56,8 @@ pip install -e .
 
 ## Citation
 
-If this work is used in academic research, please cite:
+If this work is used in academic research, especially the optimization part, it
+would be nice if you could cite it:
 
 ```bibtex
 @article{watfa2026residual,

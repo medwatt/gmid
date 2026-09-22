@@ -1,32 +1,24 @@
 # Generating a Lookup Table
 
-Everything in Mosplot runs on a **lookup table**: a pre-computed record of how a
-transistor behaves at every bias point. You build it once per technology (and
-per corner), save it to a `.npz` file, and reuse it for plotting and optimization.
+Everything in Mosplot runs on a lookup table: a pre-computed record of how a
+transistor behaves at every bias point. You build one per technology and corner,
+save it to a `.npz`, and reuse it for plotting and optimization.
 
-## What is in the table?
-
-For each transistor model, the generator runs a DC sweep of a single device and
-stores every requested operating-point parameter (`id`, `gm`, `gds`, `cgg`, ...)
-as a 4-D array indexed by
+For each model, the generator sweeps a single device and stores every requested
+operating-point parameter (`id`, `gm`, `gds`, `cgg`, ...) as a 4-D array indexed
+by
 
 ```
 length × vbs × vgs × vds
 ```
 
-The device width is fixed (e.g. 10 µm). Everything that scales with width is
-later normalized by it.
+The device width is fixed (e.g. 10 µm); quantities that scale with width are
+normalized by it later.
 
-Building a table takes three steps:
+## 1. Configure a simulator
 
-1. [Configure a simulator](#step-1-configure-a-simulator)
-2. [Define the sweeps](#step-2-define-the-sweeps)
-3. [Build the table](#step-3-build-the-table)
-
-## Step 1: Configure a simulator
-
-Three simulators are supported: **ngspice**, **HSPICE**, and **Spectre**. They
-take the same arguments; only the class name changes.
+ngspice, HSPICE, and Spectre take the same arguments; only the class name
+changes.
 
 ```python
 from mosplot.lookup_table_generator.simulators import NgspiceSimulator
@@ -64,8 +56,7 @@ sim = SpectreSimulator(
 )
 ```
 
-### All arguments
-
+Arguments:
 
 | Argument             | Default                                | Meaning                                                                              |
 | ---                  | ---                                    | ---                                                                                  |
@@ -76,16 +67,14 @@ sim = SpectreSimulator(
 | `device_parameters`  | `{"w": 10e-6}`                         | Instance parameters written on the transistor line (`w`, `nf`, ...).                 |
 | `parameters_to_save` | see below                              | Operating-point parameters to save.                                                  |
 | `mos_spice_symbols`  | `("m1", "m1")`                         | Instance name, and the name used to probe it. Change when the model is a subcircuit. |
-| `osdi_paths`         | `None`                                 | *ngspice only.* Compiled Verilog-A models (`.osdi`) to load.                         |
-| `hdl_paths`          | `None`                                 | *HSPICE only.* Verilog-A files to load.                                              |
+| `osdi_paths`         | `None`                                 | ngspice only. Compiled Verilog-A models (`.osdi`) to load.                           |
+| `hdl_paths`          | `None`                                 | HSPICE only. Verilog-A files to load.                                                |
 | `raw_spice`          | `None`                                 | Extra netlist lines, pasted verbatim.                                                |
 
+At least one of `include_paths` or `lib_mappings` is required. Paths are checked
+before anything runs.
 
-At least one of `include_paths` or `lib_mappings` is required. All paths are
-checked before anything runs.
-
-### Which parameters can be saved?
-
+Available parameters:
 
 | Simulator | Available |
 |---|---|
@@ -93,15 +82,11 @@ checked before anything runs.
 | HSPICE | `id`, `vth`, `vdsat`, `gm`, `gmbs`, `gds`, `cgg`, `cgs`, `cgd`, `cgb`, `cdd`, `css` |
 | Spectre | `id`, `vth`, `vdsat`, `gm`, `gmbs`, `gds`, `cgg`, `cgs`, `cgd`, `cgb`, `cdd`, `css` |
 
+By default everything except `css` is saved. If your model does not expose a
+parameter, pass the ones you want in `parameters_to_save` rather than editing
+the repo.
 
-By default, everything except `css` is saved.
-
-> [!TIP]
-> **If your model doesn't expose a parameter, don't fork this repo just to change that.**
-> Just pass in the parameters to save in the `parameters_to_save` argument.
-
-
-## Step 2: Define the sweeps
+## 2. Define the sweeps
 
 One `TransistorSweep` per model. Voltages are `(start, stop, step)` and follow
 the device's own sign convention, so PMOS sweeps go negative:
@@ -126,7 +111,7 @@ pmos_sweep = TransistorSweep(
 )
 ```
 
-## Step 3: Build the table
+## 3. Build the table
 
 ```python
 from mosplot.lookup_table_generator import LookupTableGenerator
@@ -145,17 +130,14 @@ gen.op_simulation()           # optional: run one operating point and print the 
 gen.build("./my_process_tt")  # writes ./my_process_tt.npz
 ```
 
-- The **keys of `model_sweeps` are the model names** written into the netlist.
-  They are also the names you use later to pick a device
-  (`Mosfet(..., mos="NMOS_VTH")`).
-- `op_simulation()` is a quick sanity check. Run it first when setting up a new
-  PDK: it prints the generated netlist and runs one operating point.
-- `n_process` runs several simulations in parallel. Keep it at `1` for ngspice,
-  which already uses multiple threads internally.
+The keys of `model_sweeps` are the model names written into the netlist and the
+names used later to pick a device (`Mosfet(..., mos="NMOS_VTH")`).
+`op_simulation()` is a quick sanity check when setting up a new PDK.
+`n_process` runs several simulations in parallel; keep it at `1` for ngspice,
+which already uses multiple threads internally.
 
-### Process corners
-
-Build one table per corner, changing only `lib_mappings` (and the file name):
+For process corners, build one table per corner, changing only `lib_mappings`
+and the file name:
 
 ```python
 sweeps = {"NMOS_VTH": nmos_sweep, "PMOS_VTH": pmos_sweep}
@@ -166,7 +148,7 @@ for corner in ["tt", "ss", "ff"]:
     gen.build(f"./luts/my_process_{corner}")
 ```
 
-The optimizer uses these tables to size a circuit across all corners at once.
+The optimizer uses these tables to size across all corners at once.
 
 ## Loading a table
 
@@ -178,7 +160,6 @@ print(lookup_table.keys())
 # dict_keys(['NMOS_VTH', 'PMOS_VTH', 'description', 'simulator', 'parameter_names', 'device_parameters'])
 ```
 
-The file is a plain Python dict. Next step: [design charts](plotting.md).
-
-A complete, runnable script is in
+The file is a plain Python dict. Next step: [design charts](plotting.md). A
+complete runnable script is in
 [`examples/lookup_table_generator`](../examples/lookup_table_generator).

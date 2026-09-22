@@ -1,99 +1,48 @@
 # Writing a Design from Scratch
 
-This page explains how the optimizer works and builds a complete design file
-from scratch: a two-stage Miller OTA with a PMOS input pair. The same procedure
-applies to any other topology. The finished files are in
+This page builds a complete design file: a two-stage Miller OTA with a PMOS
+input pair. The same procedure applies to any topology. The finished files are
+in
 [`examples/designs/VoltageAmplifiers/SingleEnded/Miller/pmos`](../examples/designs/VoltageAmplifiers/SingleEnded/Miller/pmos).
-
-To optimize one of the [existing designs](optimization.md#available-designs),
-none of this is needed; only a configuration file is written.
-
-- [How the optimizer works](#how-the-optimizer-works)
-- [Worked example: the Miller OTA](#worked-example-the-miller-ota)
-  - [Step 1: Topology](#step-1-topology)
-  - [Step 2: Knobs](#step-2-knobs)
-  - [Step 3: Derive the node voltages](#step-3-derive-the-node-voltages)
-  - [Step 4: Unknowns](#step-4-unknowns)
-  - [Step 5: `solve_point()`](#step-5-solve_point)
-  - [Step 6: `residuals()`](#step-6-residuals)
-  - [Step 7: `specs()`](#step-7-specs)
-  - [Step 8: Multicorner conservation](#step-8-multicorner-conservation)
-  - [Step 9: Netlist hooks](#step-9-netlist-hooks)
-  - [Step 10: The configuration file](#step-10-the-configuration-file)
-  - [Step 11: Run and read the results](#step-11-run-and-read-the-results)
-- [Checklist for a new circuit](#checklist-for-a-new-circuit)
-- [Parallel evaluation](#parallel-evaluation)
+To optimize an [existing design](optimization.md), only a configuration file is
+needed.
 
 ## How the optimizer works
 
-### Three kinds of variables
+Every quantity in a circuit model is one of three things: a **knob** chosen by
+the optimizer (gm/ID, length, a branch current, a mirror ratio, CC, RZ), an
+**unknown** solved by an inner nonlinear solver (a node voltage that depends on
+itself through a lookup), or a **derived quantity** computed directly (widths,
+currents, explicit node voltages). Widths are never knobs: for a device at a
+given gm/ID, length, and VDS the table returns ID/W, and W = ID / (ID/W).
 
-Every quantity in a circuit model belongs to one of three groups.
+One evaluation of a candidate sizes the circuit at the reference corner (the
+first in the list), freezes the geometry and conserved biases, re-solves the
+operating point at every other corner with that geometry, and compares each
+spec's worst value across corners with its target. The search is CMA-ES
+followed by an SLSQP polish; designs whose DC operating point does not solve get
+a large penalty graded by the solver residual.
 
- | Group                  | Chosen by                    | Examples                                                                                              |
- | ---                    | ---                          | ---                                                                                                   |
- | **Knobs**              | the outer optimizer (CMA-ES) | $\mathrm{gm}/I_D$, channel length, a branch current, a mirror ratio, $C_C$, $R_Z$                     |
- | **Unknowns**           | an inner nonlinear solver    | a node voltage that depends on itself through a lookup, e.g. the $V_{DS}$ of a diode-connected device |
- | **Derived quantities** | computed directly            | widths, currents, node voltages that can be written explicitly                                        |
-
-Widths are never knobs. For a device biased at a given $\mathrm{gm}/I_D$,
-length, and $V_{DS}$, the lookup table returns the current density $I_D/W$, and
-the width follows as $W = I_D / (I_D/W)$. This is the $\mathrm{gm}/I_D$ method
-applied automatically to every transistor.
-
-### One evaluation of a candidate design
-
-```
-knobs ──> size at the reference corner ──> freeze the geometry ──> re-solve every other corner ──> worst case of each spec ──> cost
-            (solve the unknowns,              (W, L, passives,        (same W and L; gm/Id and
-             derive W, compute specs)          conserved biases)       currents move with process)
-```
-
-1. **Sizing.** At the reference corner (the first in the list), the knobs are
-   fixed, the unknowns are solved, and the widths are derived.
-2. **Freezing.** Widths, lengths, passive values, and conserved bias quantities
-   are stored. These define the physical circuit.
-3. **Re-cornering.** At every other corner, the physical circuit stays fixed and
-   its operating point is solved again. A transistor of frozen width and length
-   runs at a different $\mathrm{gm}/I_D$ in the fast corner than in the slow one; the solver
-   finds that $\mathrm{gm}/I_D$.
-4. **Cost.** For each spec, the worst value over all corners is compared with
-   its target.
-
-The outer search uses CMA-ES followed by an SLSQP polish. Candidates whose DC
-operating point cannot be solved receive a large penalty, graded by how far the
-solver was from convergence.
-
-### Two files per design
-
-| File               | Contents                                                        | Depends on the technology? |
-| ---                | ---                                                             | ---                        |
-| `design.py`        | topology, knob names, unknowns, equations, specs, netlist hooks | no                         |
-| configuration file | lookup tables, operating conditions, knob bounds, target specs  | yes                        |
-
-The same `design.py` is reused unchanged in any technology; only the
-configuration file changes.
+A design has two files: `design.py` (topology, knobs, unknowns, equations,
+specs, netlist hooks) is technology-independent and reused unchanged; the
+configuration file (tables, conditions, knob bounds, targets) changes per
+technology.
 
 ## Worked example: the Miller OTA
 
 ![Miller OTA](figures/miller_ota.svg)
 
-The circuit is a two-stage OTA:
-
-- **First stage:** PMOS input pair `M1a`/`M1b`, NMOS current-mirror load
+- First stage: PMOS input pair `M1a`/`M1b`, NMOS current-mirror load
   `M2a`/`M2b`, PMOS tail current source `M3`.
-- **Second stage:** NMOS common-source device `M4` with PMOS current-source load
-  `M5`.
-- **Compensation:** Miller capacitor `CC` with nulling resistor `Rz`.
-- **Bias:** the gates of `M3` and `M5` share the bias node `vbp`. In the
-  generated netlist, `vbp` is produced by a diode-connected replica `Mvbp` fed
-  by a reference current, exactly as on silicon.
+- Second stage: NMOS common-source `M4` with PMOS current-source load `M5`.
+- Compensation: Miller capacitor `CC` with nulling resistor `Rz`.
+- Bias: `M3` and `M5` share the node `vbp`, produced in the netlist by a
+  diode-connected replica `Mvbp` fed by a reference current.
 
-The colors in the schematic map directly onto the code: blue names are knobs,
-green names are unknowns, and red expressions are node voltages computed in
-`solve_point()`.
+Blue names in the schematic are knobs, green are unknowns, red are node
+voltages computed in `solve_point()`.
 
-The file starts with the imports:
+### Step 1: Topology
 
 ```python
 from __future__ import annotations
@@ -104,13 +53,8 @@ from mosplot.optimizer import (
     CircuitModel, Instance, Knob, Passive, Spec, State, Unknown, VSource,
     build_ss_model, run, vres, rres,
 )
-```
 
-### Step 1: Topology
 
-The topology is a direct transcription of the schematic shown above.
-
-```python
 class Circuit(CircuitModel):
     NAME = "amp"                                    # subcircuit name in the netlist
     PORTS = ["VINN", "VINP", "VOUT", "vdd", "vss"]  # subcircuit port order
@@ -137,22 +81,22 @@ class Circuit(CircuitModel):
     SIGNAL_NODES = {"VINP", "VINN"}
 ```
 
-
-| Declaration                                 | Meaning                                                                                                                                                                                                                                                |
-| ---                                         | ---                                                                                                                                                                                                                                                    |
-| `Instance(name, "nmos"/"pmos", d, g, s, b)` | One transistor and its four terminals.                                                                                                                                                                                                                 |
-| `Passive(name, "res"/"cap", a, b)`          | A resistor or capacitor. `external=True` marks an element that belongs to the small-signal model but not to the circuit, such as the load capacitance; its value comes from the operating conditions.                                                  |
-| `VSource(name, p, n, supply=True)`          | The supply.                                                                                                                                                                                                                                            |
-| `VSource(name, p, n, mirror="M3")`          | A bias node realized by a current mirror. In the small-signal model the node is an AC ground. In the netlist, it is written as a diode-connected copy of `M3` fed by a reference current. The replica `Mvbp` is therefore **not** listed in `MOSFETS`. |
-| `SIGNAL_NODES`                              | Nodes driven by the AC input. All other nodes attached to a voltage source are AC grounds.                                                                                                                                                             |
-
-Node names are free-form, but every net tied to the lower rail must use the
-name given in `GROUND`.
+`Instance(name, "nmos"/"pmos", d, g, s, b)` is one transistor and its four
+terminals. `Passive(name, "res"/"cap", a, b)` is a resistor or capacitor;
+`external=True` marks an element of the small-signal model that is not part of
+the circuit, such as the load capacitance, whose value comes from the operating
+conditions. `VSource(name, p, n, supply=True)` is the supply;
+`VSource(name, p, n, mirror="M3")` is a bias node realized by a current mirror:
+an AC ground in the small-signal model and, in the netlist, a diode-connected
+copy of `M3` fed by a reference current (the replica `Mvbp` is not listed in
+`MOSFETS`). `SIGNAL_NODES` are AC inputs; every other node on a voltage source is
+an AC ground. Node names are free-form, except that the lower rail must use the
+name in `GROUND`.
 
 ### Step 2: Knobs
 
-Knobs are declared by name and **role** only. Their numeric bounds belong to
-the configuration file, which keeps `design.py` free of technology numbers.
+Knobs are declared by name and role only; their numeric bounds live in the
+configuration file, keeping `design.py` free of technology numbers.
 
 ```python
     KNOBS = [
@@ -171,64 +115,51 @@ the configuration file, which keeps `design.py` free of technology numbers.
     ]
 ```
 
-The role determines what happens to the knob at corners other than the
-reference:
+The role determines what happens at corners other than the reference:
 
-| Role         | Use for                                                      | At the reference corner | At other corners                                                                             |
-| ---          | ---                                                          | ---                     | ---                                                                                          |
-| `"op"`       | $\mathrm{gm}/I_D$ of a device                                | chosen by the optimizer | re-solved so that the device width `sets_width_of` equals its frozen value                   |
-| `"geom"`     | lengths, width ratios, multipliers, passive values           | chosen by the optimizer | held fixed                                                                                   |
-| `"external"` | externally applied bias: a reference current, a bias voltage | chosen by the optimizer | held fixed, unless listed in `RECORNER_RESOLVE` ([Step 8](#step-8-multicorner-conservation)) |
+| Role | Use for | Reference corner | Other corners |
+|---|---|---|---|
+| `"op"` | gm/ID of a device | chosen by the optimizer | re-solved so the device in `sets_width_of` equals its frozen width |
+| `"geom"` | lengths, width ratios, multipliers, passive values | chosen by the optimizer | held fixed |
+| `"external"` | externally applied bias: a reference current or bias voltage | chosen by the optimizer | held fixed, unless listed in `RECORNER_RESOLVE` |
 
-Some guidelines:
-
-- **Matched devices share knobs.** `M1a` and `M1b` form a differential pair, so
-  both use `M1a_GMID` and `M1a_L`. Likewise `M2a`/`M2b`.
-- **Mirror copies share $\mathrm{gm}/I_D$ and length with their master.** `M5` copies `M3`,
-  so it uses `M3_GMID` and `M3_L`; its size is set by the ratio `W5_over_W3`.
-- **One current knob per independent branch.** Here `M1a_ID` sets the
-  first-stage branch current; every other current follows from KCL and mirror
-  ratios.
-
-The knob names are arbitrary. They are read back as attributes, e.g.
-`v.M1a_GMID`, and must match the names in the configuration file.
+Matched devices share knobs (`M1a`/`M1b` use `M1a_GMID` and `M1a_L`; likewise
+`M2a`/`M2b`), and mirrors share gm/ID and length with their master (`M5` uses
+`M3_GMID` and `M3_L`, sized by `W5_over_W3`). Use one current knob per
+independent branch. Knob names are arbitrary; they are read back as attributes
+(`v.M1a_GMID`) and must match the configuration file.
 
 ### Step 3: Derive the node voltages
 
-This step is done on paper. Every transistor needs a $V_{DS}$ (and a $V_{SB}$)
-for its lookup. The lookups take and return magnitudes, so every voltage in the
-model is positive. For a PMOS device, $V_{DS}$ and $V_{GS}$ are negative, and
-the values used are $|V_{DS}| = V_S - V_D$ and $|V_{GS}| = V_S - V_G$. The
-lookups apply the signs internally.
+Done on paper. Every transistor needs a VDS (and VSB) for its lookup; the
+lookups take and return magnitudes, so every voltage in the model is positive
+(PMOS signs are applied inside the lookup). Start from the known nodes:
 
-Start from the nodes whose voltages are known:
+| Node | Voltage | Reason |
+|---|---|---|
+| `VOUT` | Vout,dc | the intended output operating point, a condition |
+| `n03` | VGS,M4 | gate of `M4`, source at ground |
+| `n02` | Vin,cm + VGS,M1b | source of the input pair |
+| `n01` | VGS,M2 | gate of the mirror |
+| `vbp` | VDD − VGS,M3 | gate of the tail source |
 
-| Node   | Voltage                  | Reason                                                      |
-| ---    | ---                      | ---                                                         |
-| `VOUT` | $V_{out,dc}$             | the intended output operating point, an operating condition |
-| `n03`  | $V_{GS,M4}$              | gate of `M4`, whose source is at ground                     |
-| `n02`  | $V_{in,cm} + V_{GS,M1b}$ | source of the input pair, one $V_{GS}$ above the input      |
-| `n01`  | $V_{GS,M2}$              | gate of the mirror, whose source is at ground               |
-| `vbp`  | $V_{DD} - V_{GS,M3}$     | gate of the tail source                                     |
+Then check each VDS for whether it can be computed before its own device is
+looked up:
 
-Then write each $V_{DS}$ and check whether its right-hand side can be computed
-**before** the device itself is looked up:
+| Device | VDS | Computable in advance? |
+|---|---|---|
+| `M4` | Vout,dc | yes: a condition |
+| `M5` | VDD − Vout,dc | yes: a condition |
+| `M2b` | VGS,M4 | yes, once `M4` is looked up |
+| `M2a` | VGS,M2a (diode) | no: needs its own VGS → unknown `M2a_VDS` |
+| `M1b` | Vin,cm + VGS,M1b − VGS,M4 | no: needs its own VGS → unknown `M1b_VDS` |
+| `M1a` | Vin,cm + VGS,M1b − VGS,M2b | yes, once `M1b` and `M2b` are known |
+| `M3` | VDD − Vin,cm − VGS,M1b | yes, once `M1b` is known |
 
-| Device | $V_{DS}$                              | Computable in advance?                                |
-| ---    | ---                                   | ---                                                   |
-| `M4`   | $V_{out,dc}$                          | yes: a condition                                      |
-| `M5`   | $V_{DD} - V_{out,dc}$                 | yes: a condition                                      |
-| `M2b`  | $V_{GS,M4}$                           | yes, once `M4` has been looked up                     |
-| `M2a`  | $V_{GS,M2a}$ (diode)                  | **no**: it needs its own $V_{GS}$ → unknown `M2a_VDS` |
-| `M1b`  | $V_{in,cm} + V_{GS,M1b} - V_{GS,M4}$  | **no**: it needs its own $V_{GS}$ → unknown `M1b_VDS` |
-| `M1a`  | $V_{in,cm} + V_{GS,M1b} - V_{GS,M2b}$ | yes, once `M1b` and `M2b` are known                   |
-| `M3`   | $V_{DD} - V_{in,cm} - V_{GS,M1b}$     | yes, once `M1b` is known                              |
-
-
-A self-referential equation such as $V_{DS,M2a} = V_{GS,M2a}(V_{DS,M2a})$ cannot
-be evaluated in a single pass, so it becomes an unknown. Everything else is
-evaluated directly, in the right order. This analysis fixes both the unknowns
-and the order of the lookups in `solve_point()`.
+A self-referential equation such as VDS,M2a = VGS,M2a(VDS,M2a) cannot be
+evaluated in one pass, so it becomes an unknown. Everything else is evaluated
+directly, in this order; the analysis fixes both the unknowns and the lookup
+order.
 
 ### Step 4: Unknowns
 
@@ -240,50 +171,36 @@ and the order of the lookups in `solve_point()`.
     ]
 ```
 
-Each unknown has an initial guess (`seed`) and a search box (`bound`). Both can
-be constants or functions of the operating conditions `c`. Writing them in
-terms of `c["vdd"]` keeps the design independent of the supply voltage.
+Each unknown has a `seed` (initial guess) and a `bound`, either constants or
+functions of the conditions `c`; writing them in terms of `c["vdd"]` keeps the
+design independent of the supply.
 
-The third unknown belongs to the bias replica. `Mvbp` has the same width and
-length as `M3`, is diode-connected, and must produce the same gate voltage as
-`M3`. Its $V_{DS}$ equals its own $V_{GS}$, whereas `M3` operates at a different
-$V_{DS}$, so the two devices do not run at the same $\mathrm{gm}/I_D$. The solver finds the
-$\mathrm{gm}/I_D$ at which the replica's $V_{GS}$ equals that of `M3`. From it follows the
-reference current that the replica needs, which is written into the netlist.
-
-> [!NOTE]
-> Keep the number of unknowns small. A variable that can be computed directly
-> should not be an unknown: it slows the solver down and can make it less
-> robust.
+The third unknown belongs to the bias replica: `Mvbp` has the width and length
+of `M3`, is diode-connected, and must produce the same gate voltage as `M3`.
+Since its VDS equals its own VGS while `M3` runs at a different VDS, the two do
+not sit at the same gm/ID; the solver finds the gm/ID at which the replica's VGS
+matches `M3`, from which the reference current follows. Keep the number of
+unknowns small: anything computable directly should not be one.
 
 ### Step 5: `solve_point()`
 
-`solve_point()` performs every lookup and derives every quantity. It is called
-many times per candidate by the inner solver, each time with new trial values
-of the unknowns.
+`solve_point()` does every lookup and derives every quantity; the inner solver
+calls it many times per candidate with new trial unknowns.
 
 ```python
     def solve_point(self, v: State, dev, cond) -> State:
 ```
 
-| Argument | Contents                                                                                               |
-| ---      | ---                                                                                                    |
-| `v`      | the knobs and the current trial values of the unknowns, as attributes (`v.M1a_GMID`, `v.M2a_VDS`, ...) |
-| `dev`    | the lookup tables of the active corner: `dev.nmos(...)` and `dev.pmos(...)`                            |
-| `cond`   | the operating conditions of the active corner (`cond["vdd"]`, ...)                                     |
-
-**Operating conditions.**
+`v` holds the knobs and trial unknowns as attributes, `dev` is the active
+corner's tables (`dev.nmos(...)`, `dev.pmos(...)`), and `cond` is its conditions
+(`cond["vdd"]`, ...). Operating conditions, then lookups in dependency order:
 
 ```python
 COUT = cond["cout"]
 VDD = cond["vdd"]
 VIN_CM = cond["vin_cm"]
 VOUT_DC = cond["vout_dc"]
-```
 
-**Lookups, in the order found in Step 3.**
-
-```python
 M4_VDS = VOUT_DC
 M4 = dev.nmos(gmid=v.M4_GMID, L=v.M4_L, vds=M4_VDS, vsb=0.0)
 M2a = dev.nmos(gmid=v.M2a_GMID, L=v.M2a_L, vds=v.M2a_VDS, vsb=0.0)   # unknown VDS
@@ -299,67 +216,38 @@ M5 = dev.pmos(gmid=v.M3_GMID, L=v.M3_L, vds=M5_VDS, vsb=0.0)
 Mvbp = dev.pmos(gmid=v.Mvbp_GMID, L=v.M3_L, vds=M3.vgs, vsb=0.0)    # diode: VDS = VGS of M3
 ```
 
-Each call returns a `DevicePoint`. All of its fields are positive magnitudes:
+Each call returns a positive-magnitude `DevicePoint` with `vgs`, `vdsat`, `jd`
+(ID/W), `gds_id` (gds/ID), `cgs`/`cgd`/`cdd`, and `vds_used`. `M2a` and `M2b`
+share a gate voltage but are looked up separately because their drains differ.
 
-| Field               | Quantity                         |
-| ---                 | ---                              |
-| `vgs`               | $\lvert V_{GS} \rvert$           |
-| `vdsat`             | $\lvert V_{DS,sat} \rvert$       |
-| `jd`                | current density $I_D/W$ (A/m)    |
-| `gds_id`            | $g_{ds}/I_D$                     |
-| `cgs`, `cgd`, `cdd` | capacitances of the table device |
-| `vds_used`          | the $V_{DS}$ used for the lookup |
-
-
-`M2a` and `M2b` share a gate voltage, but they are looked up separately because
-their drain voltages differ, and the lookup table captures that difference.
-
-**Currents** follow from KCL and the mirror ratios:
+Currents follow from KCL and mirror ratios, and widths from the current density;
+matched devices copy their partner's width:
 
 ```python
-ID = {}
-ID["M1a"] = v.M1a_ID
-ID["M1b"] = ID["M1a"]
-ID["M2a"] = ID["M1a"]
-ID["M2b"] = ID["M2a"]
-ID["M3"] = ID["M1a"] + ID["M1b"]
-ID["M5"] = ID["M3"] * v.W5_over_W3
+ID = {
+    "M1a": v.M1a_ID, "M1b": v.M1a_ID, "M2a": v.M1a_ID, "M2b": v.M1a_ID,
+    "M3": 2 * v.M1a_ID,                          # M1a + M1b
+    "M5": 2 * v.M1a_ID * v.W5_over_W3,
+    "Mvbp": 2 * v.M1a_ID,
+}
 ID["M4"] = ID["M5"]
-ID["Mvbp"] = ID["M3"]
-IREF_Mvbp = ID["M3"] * Mvbp.jd / M3.jd
+IREF_Mvbp = ID["M3"] * Mvbp.jd / M3.jd           # reference current for the vbp replica
+
+W = {
+    "M1a": ID["M1a"] / M1a.jd, "M1b": ID["M1a"] / M1a.jd,
+    "M2a": ID["M2a"] / M2a.jd, "M2b": ID["M2a"] / M2a.jd,
+    "M3":  ID["M3"] / M3.jd,   "M4":  ID["M4"] / M4.jd,
+    "M5":  ID["M5"] / M5.jd,   "Mvbp": ID["M3"] / M3.jd,
+}
 ```
 
 `IREF_Mvbp` is the current of a diode with the width of `M3` at the gate voltage
-of `M3`: $W_3 \cdot (I_D/W)_{Mvbp}$. It is the reference current the bias
-network must supply.
+of `M3`, i.e. the reference current the bias network must supply.
 
-**Widths** come from the current density, and matched devices copy the width of
-their partner:
-
-```python
-W = {}
-W["M1a"] = ID["M1a"] / M1a.jd
-W["M1b"] = W["M1a"]
-W["M2a"] = ID["M2a"] / M2a.jd
-W["M2b"] = W["M2a"]
-W["M3"] = ID["M3"] / M3.jd
-W["M4"] = ID["M4"] / M4.jd
-W["M5"] = W["M3"] * v.W5_over_W3
-W["Mvbp"] = W["M3"]
-```
-
-**Lengths and $\mathrm{gm}/I_D$** for the report and the netlist:
-
-```python
-L = {"M1a": v.M1a_L, "M1b": v.M1a_L, "M2a": v.M2a_L, "M2b": v.M2a_L,
-     "M3": v.M3_L, "M4": v.M4_L, "M5": v.M3_L, "Mvbp": v.M3_L}
-GMID = {"M1a": v.M1a_GMID, "M1b": v.M1a_GMID, "M2a": v.M2a_GMID, "M2b": v.M2a_GMID,
-        "M3": v.M3_GMID, "M4": v.M4_GMID, "M5": v.M3_GMID, "Mvbp": v.Mvbp_GMID}
-```
-
-**Small-signal parameters** for every device in `MOSFETS`. `small_signal()`
-scales the table capacitances from the width of the table device to the actual
-width:
+Small-signal parameters are needed for every device in `MOSFETS`; `small_signal`
+scales the table capacitances from the table device width to the actual width
+(`use_gmb=True` adds the body transconductance, which matters for cascodes; all
+sources here are at their bulk, so it is off):
 
 ```python
 ptw, ntw = dev.pmos.table_width, dev.nmos.table_width
@@ -374,11 +262,10 @@ ss = {
 }
 ```
 
-`use_gmb=True` includes the body transconductance, which matters for cascodes.
-All sources in this circuit are at their bulk, so it is disabled.
-
-**Return** every quantity that `residuals()`, `specs()`, or the netlist hooks
-will read. `W`, `L`, `ID`, `GMID`, and `ss` are required by the framework:
+Return a `State` with the required `W`, `L` (per-device lengths, e.g.
+`{"M1a": v.M1a_L, "M1b": v.M1a_L, ...}`), `ID`, `GMID` (per-device gm/ID), and
+`ss`, plus every other quantity that `residuals()`, `specs()`, or the netlist
+hooks read:
 
 ```python
 return State(
@@ -393,7 +280,7 @@ return State(
 
 ### Step 6: `residuals()`
 
-One equation per unknown, each written as "left side minus right side":
+One equation per unknown, written as "left side minus right side":
 
 ```python
 def residuals(self, b) -> list:
@@ -404,26 +291,15 @@ def residuals(self, b) -> list:
     ]
 ```
 
-`b` is the `State` returned by `solve_point()`. The helpers normalize the
-residuals so that different equations carry comparable weight:
-
-| Helper                      | Value                           | Use for                               |
-| ---                         | ---                             | ---                                   |
-| `vres(lhs, rhs, scale=0.5)` | $(lhs - rhs)/0.5\,\mathrm{V}$   | voltage equalities                    |
-| `rres(lhs, rhs, ref)`       | $(lhs - rhs)/\lvert ref \rvert$ | relative equalities, such as currents |
-
-The number of residuals must equal the number of unknowns. The optimizer
-checks this when it starts and raises an error otherwise.
+`b` is the `State` from `solve_point()`. `vres(lhs, rhs, scale=0.5)` returns
+`(lhs - rhs)/0.5 V` for voltages; `rres(lhs, rhs, ref)` returns `(lhs - rhs)/|ref|`
+for relative equalities such as currents. The number of residuals must equal the
+number of unknowns; the optimizer checks this at start.
 
 ### Step 7: `specs()`
 
-`specs()` turns the solved state into performance figures. It is a pure
-function of `b`: no lookups and no solving.
-
-**AC performance.** `build_ss_model()` assembles the small-signal circuit from
-the topology, the per-device parameters, and the passive values. `transfer()`
-then applies a stimulus to the input nodes and observes a weighted sum of output
-nodes:
+`specs()` turns the solved state into performance figures; it is a pure function
+of `b`, with no lookups or solving.
 
 ```python
 def specs(self, b, cond) -> dict:
@@ -442,32 +318,25 @@ def specs(self, b, cond) -> dict:
     }
 ```
 
-| Method             | Returns                                              |
-| ---                | ---                                                  |
-| `gain()`           | DC gain                                              |
-| `ugf()`            | unity-gain frequency (Hz)                            |
-| `phase_margin()`   | phase margin (degrees)                               |
-| `response(f)`      | complex response at frequency `f`                    |
-| `rejection(other)` | ratio of this gain to the gain of `other`, e.g. CMRR |
+`build_ss_model()` assembles the small-signal circuit from the topology, the
+device parameters, and the passives; `transfer()` applies an input stimulus and
+observes a weighted sum of output nodes. Its methods are `gain()`, `ugf()`,
+`phase_margin()`, `response(f)`, and `rejection(other)` (gain ratio, e.g. CMRR).
+A differential output is observed with `output={"VOUTP": 1.0, "VOUTN": -1.0}`.
 
-A fully differential output is observed with `output={"VOUTP": 1.0, "VOUTN": -1.0}`.
-
-**Output centering.** The output voltage $V_{out,dc}$ is an input of the
-model: it sets the $V_{DS}$ of `M4` and `M5`. Nothing yet guarantees that the
-first stage actually delivers the gate voltage `M4` needs for that output. In
-the real circuit, `n03` sits at the mirror voltage $V_{GS,M2}$, while `M4`
-requires $V_{GS,M4}$. The difference is the systematic offset of the amplifier.
-If it is not small, the output of the open-loop circuit saturates at a rail in
-simulation:
+The output voltage Vout,dc is an input of the model (it sets the VDS of `M4` and
+`M5`), but nothing yet forces the first stage to deliver the gate voltage `M4`
+needs. In the real circuit `n03` sits at VGS,M2 while `M4` requires VGS,M4; the
+difference is the systematic offset, which makes the open-loop output saturate
+at a rail if it is not small. Report it and weight it heavily:
 
 ```python
 out["VOUT_Error"] = abs(b.M4.vgs - b.M2a.vgs)
 ```
 
-This quantity is given a high weight in the configuration file.
-
-**Area, current, bias voltage, and signal ranges.** Every saturation condition
-$V_{DS} \geq V_{DS,sat}$ turns into a limit on the input or output voltage:
+Area, current, bias voltage, and signal ranges follow the same way; every
+saturation condition VDS ≥ VDS,sat becomes a limit on an input or output
+voltage:
 
 ```python
 out["Area"] = sum(b.L[m] * b.W[m] for m in b.W)
@@ -484,17 +353,14 @@ out["Output_Swing"] = out["VOUT_MAX"] - out["VOUT_MIN"]
 return out
 ```
 
-Every key returned here appears in the report. Only the keys listed in the
-configuration file's `TARGET_SPECS` affect the optimization.
+Every key appears in the report; only keys listed in `TARGET_SPECS` affect the
+optimization.
 
 ### Step 8: Multicorner conservation
 
-On silicon, the bias of this amplifier is a fixed reference current flowing
-into the diode `Mvbp`. When the process changes, that current stays the same,
-while `vbp` and the tail current of `M3` move. The model must behave in the
-same way at every non-reference corner.
-
-Three declarations express this:
+On silicon the bias is a fixed reference current into the diode `Mvbp`. When the
+process changes, that current stays fixed while `vbp` and the `M3` tail current
+move. To reproduce this at every non-reference corner:
 
 ```python
 RECORNER_RESOLVE = ["M1a_ID"]
@@ -507,28 +373,22 @@ def recorner_residuals(self, b, frozen) -> list:
     return [rres(b.IREF_Mvbp, e["IREF_Mvbp"], e["IREF_Mvbp"])]
 ```
 
-1. `freeze_extra()` stores the reference current computed at the reference
-   corner.
-2. At the other corners, `RECORNER_RESOLVE` releases the knob `M1a_ID`, which
-   is normally held fixed because of its `"external"` role.
-3. `recorner_residuals()` adds the condition that pins it: the reference
-   current must equal its frozen value. The branch current therefore drifts
-   with the process, exactly as in the real mirror.
+`freeze_extra()` stores the reference current at the reference corner. At the
+other corners `RECORNER_RESOLVE` releases `M1a_ID` (normally held fixed by its
+`"external"` role), and `recorner_residuals()` pins it to the frozen value, so
+the branch current drifts with the process as in the real mirror. The re-solve
+must stay square: each entry in `recorner_residuals()` needs exactly one knob in
+`RECORNER_RESOLVE`.
 
-The re-solve must remain square: each entry in `recorner_residuals()` needs
-exactly one knob in `RECORNER_RESOLVE`. The optimizer checks this when it
-starts.
-
-The same pattern applies to a bias applied as a fixed voltage (a `VSource`
-without `mirror`) whose value is derived from a knob. Store the voltage in
-`freeze_extra()`, add a `vres(...)` for it in `recorner_residuals()`, and
-release the knob that determines it. A circuit without derived biases does not
-need these hooks.
+A bias applied as a fixed voltage (a `VSource` without `mirror`) whose value is
+derived from a knob follows the same pattern: store the voltage in
+`freeze_extra()`, add a `vres(...)` for it, and release the knob that determines
+it. A circuit with no derived biases needs none of these hooks.
 
 ### Step 9: Netlist hooks
 
-After optimization, the frozen design is written as a Spectre subcircuit. The
-hooks provide the values that the topology alone does not contain:
+After optimization the frozen design is written as a Spectre subcircuit. The
+hooks supply the values the topology alone does not contain:
 
 ```python
 def mirror_currents(self, ref_op) -> dict:
@@ -541,19 +401,18 @@ def netlist_context(self, corner, ref_op=None) -> dict:
     return {"vcm": corner.cond("vin_cm"), "vout_dc": corner.cond("vout_dc")}
 ```
 
-| Hook                             | Purpose                                                                                          |
-| ---                              | ---                                                                                              |
-| `passive_values()`               | values of every non-external `Passive`                                                           |
-| `mirror_currents()`              | reference current of every `mirror=` bias. Without it, the current of the master device is used. |
-| `vsource_values(ref_op, frozen)` | DC value of every bias written as an ideal voltage source                                        |
-| `isource_values(ref_op, frozen)` | DC value of every entry in `ISOURCES`                                                            |
-| `netlist_context()`              | values written as netlist `parameters`, for use by a testbench                                   |
-| `extra_netlist_lines()`          | lines copied verbatim into the subcircuit                                                        |
+| Hook | Purpose |
+|---|---|
+| `passive_values()` | values of every non-external `Passive` |
+| `mirror_currents()` | reference current of every `mirror=` bias; without it, the master device current is used |
+| `vsource_values(ref_op, frozen)` | DC value of every bias written as an ideal voltage source |
+| `isource_values(ref_op, frozen)` | DC value of every entry in `ISOURCES` |
+| `netlist_context()` | values written as netlist `parameters`, for use by a testbench |
+| `extra_netlist_lines()` | lines copied verbatim into the subcircuit |
 
 ### Step 10: The configuration file
 
-The configuration file binds the design to a technology. It supplies the
-lookup tables, the operating conditions, the knob bounds, and the targets.
+Bind the design to a technology: tables, conditions, knob bounds, targets.
 
 ```python
 from design import Circuit, run
@@ -606,62 +465,29 @@ if __name__ == "__main__":
     )
 ```
 
-**Operating conditions.** `COND` holds everything `solve_point()` reads from
-`cond`. A voltage or temperature corner reuses a table with different
-conditions, e.g. `Corner("tt_lowvdd", "luts/tt.npz", "nmos", "pmos", conditions=dict(COND, vdd=1.08))`.
+`COND` holds everything `solve_point()` reads from `cond`. A voltage or
+temperature corner reuses a table with different conditions, e.g.
+`Corner("tt_lowvdd", "luts/tt.npz", "nmos", "pmos", conditions=dict(COND, vdd=1.08))`.
 
-**Knob bounds.** Every knob of `design.py` needs a bound. A tuple `(lo, hi)` is
-a continuous range.
+Every knob of `design.py` needs a bound; `(lo, hi)` is a continuous range. Each
+`Spec(target, mode, weight)` picks one of three penalty modes:
 
-**Specs.** `Spec(target, mode, weight)`:
+| Mode | Meaning | Penalty |
+|---|---|---|
+| `"max"` | larger is better, at least `target` | grows with log(target/value) below the target |
+| `"min"` | smaller is better, at most `target` | grows with the relative excess above the target; a small term keeps pushing down even when met |
+| `"eq"` | equal to `target` | squared relative deviation |
 
-| Mode    | Meaning                             | Penalty                                                                                                                |
-| ---     | ---                                 | ---                                                                                                                    |
-| `"max"` | larger is better, at least `target` | grows with $\log(\text{target}/\text{value})$ below the target                                                         |
-| `"min"` | smaller is better, at most `target` | grows with the relative excess above the target; a small term keeps pushing the value down even when the target is met |
-| `"eq"`  | equal to `target`                   | squared relative deviation                                                                                             |
-
-
-`weight` sets the relative importance. A target of zero or below has no
-relative scale and needs `Spec(..., scale=...)` in the unit of the spec.
-
-**Corners.** `Corner(name, table, nmos_name, pmos_name, conditions)`. The first
-corner is the reference at which the design is sized.
-
-**`run()` arguments.**
-
-| Argument         | Default     | Meaning                                                             |
-| ---              | ---         | ---                                                                 |
-| `output_module`  | required    | path of the generated netlist                                       |
-| `maxiter`        | `300`       | CMA-ES iterations                                                   |
-| `n_restarts`     | `1`         | independent CMA-ES runs; raise it if results vary between seeds     |
-| `seed`           | `1`         | random seed                                                         |
-| `ref_index`      | `0`         | index of the reference corner                                       |
-| `workers`        | `1`         | parallel processes, see [Parallel evaluation](#parallel-evaluation) |
-| `netlist_format` | `"spectre"` | netlist format                                                      |
-
+`weight` sets relative importance. A target of zero or below has no relative
+scale and needs `Spec(..., scale=...)` in the unit of the spec. `run()` takes
+`output_module` (required), `maxiter=300`, `n_restarts=1`, `seed=1`,
+`ref_index=0`, `workers=1`, and `netlist_format="spectre"`; raise `n_restarts`
+if results vary between seeds.
 
 ### Step 11: Run and read the results
 
-```bash
-python config.py
-```
-
-The run prints the CMA-ES progress, then the sized transistors (from the
-reference corner):
-
-```
-Transistor Details:
-  M1a:
-    Length:  253.7nm
-    Width:   5.473µm
-    Area:    1.388 µm²
-    Current: 5.561µA
-    GmID:    19.98
-  ...
-```
-
-followed by the performance at every corner:
+Run `python config.py`. It prints the CMA-ES progress, the sized transistors
+from the reference corner, then the performance at every corner:
 
 ```
 Corner Results:
@@ -670,22 +496,17 @@ Corner Results:
   GBW          | 10.29M    | 10.47M    | 9.888M    | ≥10M    | ss
   AC Gain (dB) | 56.57     | 55.97     | 56.85     | ≥50     | ff
   PM           | 73.28     | 74.08     | 72.56     | ≥70     | ss
-  DC CMR (dB)  | 57.84     | 57.42     | 57.88     | ≥50     | ff
   VOUT_Error   | 6.235µ    | 318.8µ    | 383.8µ    | ≤20m    | ss
   Area         | 40.87 µm² | 40.87 µm² | 40.87 µm² | ≤50 µm² | tt
   Itotal       | 49.09µ    | 50.26µ    | 47.85µ    | ≤50µ    | ff
-  VBP          | 740.6m    | 773m      | 704m      |         |
-  VOUT_MAX     | 1.044     | 1.046     | 1.042     |         |
-  ...
 ```
 
-- **Binding** names the corner with the worst value of each spec. That corner
-  limits the design.
-- **Area** is identical at every corner because the geometry is frozen.
-  **Itotal** and **VBP** vary, because the bias current is conserved and the
-  gate voltage adjusts to it.
-
-The netlist for the reference corner is written to `output_module`:
+`Binding` names the corner with the worst value of each spec, which limits the
+design. Area is identical at every corner because the geometry is frozen, while
+Itotal and VBP vary because the bias current is conserved and the gate voltage
+adjusts to it. The netlist for the reference corner is written to
+`output_module`; the last two lines are the bias replica generated from
+`VSource("VBP", mirror="M3")` and `mirror_currents()`:
 
 ```
 parameters vcm=400m vout_dc=600m
@@ -704,40 +525,13 @@ Ivbp (vbp vss) isource dc=11.29u
 ends amp
 ```
 
-The last two lines are the bias replica generated from
-`VSource("VBP", mirror="M3")` and `mirror_currents()`. The subcircuit can be
-placed directly in a testbench. Simulating it at every corner is the final
-check of the model: the simulated operating point should match the reported
-one.
-
-## Checklist for a new circuit
-
-1. Draw the schematic and name every node.
-2. Transcribe the topology into `MOSFETS`, `PASSIVES`, and `VSOURCES`.
-3. Choose the knobs: $\mathrm{gm}/I_D$ and length per matched group, one current per
-   independent branch, ratios for mirrors, passive values.
-4. Write every node voltage and every $V_{DS}$ on paper. Mark the
-   self-referential ones as unknowns.
-5. Write `solve_point()`: conditions, lookups in dependency order, currents,
-   widths, lengths, $\mathrm{gm}/I_D$, small-signal parameters, `State`.
-6. Write one residual per unknown.
-7. Write `specs()`, including a centering error if an output voltage is imposed
-   as a condition.
-8. If a bias is generated by a mirror or derived from a knob, add the
-   multicorner conservation hooks.
-9. Add the netlist hooks for passives and biases.
-10. Write the configuration file, run it, and simulate the netlist.
-
+Simulating this subcircuit at every corner is the final check of the model.
 
 ## Parallel evaluation
 
-With `workers=4`, the candidates of each CMA-ES generation are evaluated by
-four processes; `workers=1` (the default) evaluates them serially. The
-processes share the lookup tables in memory, and the SLSQP polish runs
-serially afterwards.
-
-The processes are started with `spawn` on every platform. Therefore:
-
-- keep the call to `run()` inside `if __name__ == "__main__":`;
-- define the circuit class in an importable module (such as `design.py`), not
-  in a notebook. For a class defined in a notebook, use `workers=1`.
+With `workers=4` each CMA-ES generation is evaluated by four processes;
+`workers=1` (the default) runs serially. Processes share the lookup tables in
+memory, and the SLSQP polish runs serially afterwards. Processes start with
+`spawn` on every platform, so keep `run()` inside `if __name__ == "__main__":`
+and define the circuit class in an importable module such as `design.py`, not a
+notebook (use `workers=1` in a notebook).
