@@ -1,13 +1,15 @@
 from design import Circuit, run
 from mosplot.optimizer import Corner, Knob, Spec
 
+# EDIT: PDK lookup tables and device names.
 LUT_DIR = "/home/medwatt/coding/gmid_lookup"
 NMOS, PMOS = "nch_lvt", "pch_lvt"
-
-COND = dict(vdd=1.2, vin_cm=0.6, vout_dc=0.6, cout=5e-12)
 LMIN, LMAX = 130e-9, 2e-6
 
-# Bounds only -- names must match the circuit's KNOBS; roles come from the circuit.
+# EDIT: nominal operating conditions for this PDK.
+COND = dict(vdd=1.2, vin_cm=0.6, vout_dc=0.6, cout=5e-12)
+
+# EDIT: knob bounds. Names must match the circuit's KNOBS.
 PARAMETERS = [
     Knob("M1a_GMID", (10.0, 20.0)),
     Knob("M2a_GMID", (10.0, 20.0)),
@@ -27,6 +29,7 @@ PARAMETERS = [
     Knob("M5a_VDSAT_MARGIN", (0.05, 0.15), recorner_bound=(-0.5, 0.5)),
 ]
 
+# EDIT: targets. Keys must be returned by Circuit.specs().
 TARGET_SPECS = {
     "GBW": Spec(5e6, "max", 1.0),
     "AC Gain (dB)": Spec(50.0, "max", 1.0),
@@ -35,10 +38,11 @@ TARGET_SPECS = {
     "Area": Spec(100e-12, "min", 0.3),
     "Itotal": Spec(50e-6, "min", 1.0),
     "Output_Swing": Spec(0.4 * COND["vdd"], "max", 1.0),
-    "VOUT_DC": Spec(COND["vout_dc"], "eq", 1.0),  # center the a-side output (n04)
-    "Margin min":   Spec(0.02, "max", 1.0, scale=0.05),   # saturation margin of the devices under the fixed biases, every corner
+    "VOUT_DC": Spec(COND["vout_dc"], "eq", 1.0),
+    "Margin min":   Spec(0.02, "max", 1.0, scale=0.05),
 }
 
+# EDIT: one Corner per process LUT (voltage corners reuse a LUT with overridden COND).
 CORNERS = [
     Corner("tt", f"{LUT_DIR}/tsmc_65_lv_spectre_tt.npz", NMOS, PMOS, conditions=COND),
     Corner("ff", f"{LUT_DIR}/tsmc_65_lv_spectre_ff.npz", NMOS, PMOS, conditions=COND),

@@ -1,13 +1,15 @@
 from design import Circuit, run
 from mosplot.optimizer import Corner, Knob, Spec
 
+# EDIT: PDK lookup tables and device names.
 LUT_DIR = "/home/medwatt/coding/gmid_lookup"
 NMOS, PMOS = "nch_lvt", "pch_lvt"
+LMIN, LMAX = 130e-9, 2e-6
 
 # EDIT: nominal operating conditions for this PDK.
 COND = dict(vdd=1.2, vin_cm=0.4, vout_dc=0.6, cout=5e-12)
-LMIN, LMAX = 130e-9, 2e-6
 
+# EDIT: knob bounds. Names must match the circuit's KNOBS.
 PARAMETERS = [
     Knob("M1a_GMID", (10, 20)),
     Knob("M2a_GMID", (10, 20)),
@@ -31,8 +33,8 @@ TARGET_SPECS = {
     "PM": Spec(70.0, "max", 2.0),
     "Area": Spec(50e-12, "min", 0.3),
     "Itotal": Spec(50e-6, "min", 1.0),
-    # Self-bias: keep the output centred at vout_dc. Multi-stage output -> must be
-    # met (high weight), else the open-loop output rails and gain/GBW are invalid.
+
+
     "VOUT_Error": Spec(0.02, "min", 20.0),
 }
 

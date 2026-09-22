@@ -1,19 +1,21 @@
 from design import Circuit, run
 from mosplot.optimizer import Corner, Knob, Spec
 
+# EDIT: PDK lookup tables and device names.
 LUT_DIR = '/home/medwatt/coding/gmid_lookup'
 NMOS, PMOS = 'nch_lvt', 'pch_lvt'
 
 # EDIT: nominal operating conditions for this PDK.
 COND = dict(vdd=1.2, vin_cm=0.6, vout_dc=0.6, cout=5e-12)
 
+# EDIT: knob bounds. Names must match the circuit's KNOBS.
 PARAMETERS = [
     Knob('M1_GMID', (5, 20)),
     Knob('M2_GMID', (10, 20)),
     Knob('M1_L', (1e-07, 1e-05)),
     Knob('M2_L', (1e-07, 1e-05)),
     Knob('M1_ID', (5e-06, 3e-05)),
-    # output bias: pinned at tt; re-solved on other corners, inside the supply
+
     Knob("VOUT_Q", (COND["vout_dc"], COND["vout_dc"]), recorner_bound=(0.01, COND["vdd"] - 0.01)),
 ]
 
@@ -25,8 +27,8 @@ TARGET_SPECS = {
     "Area": Spec(50e-12, "min", 1.0),
     "Itotal": Spec(30e-6, "min", 1.0),
     "Output_Swing": Spec(0.6 * COND["vdd"], "max", 1.0),
-    # Active-loaded output is a high-Z node; this computed VOUT_DC is what the
-    # testbench sees when it applies vin_cm.
+
+
     "VOUT_DC": Spec(COND["vout_dc"], "eq", 2.0),
 }
 

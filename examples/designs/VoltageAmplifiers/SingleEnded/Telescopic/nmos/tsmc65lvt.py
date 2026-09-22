@@ -1,13 +1,15 @@
 from design import Circuit, run
 from mosplot.optimizer import Corner, Knob, Spec
 
+# EDIT: PDK lookup tables and device names.
 LUT_DIR = "/home/medwatt/coding/gmid_lookup"
 NMOS, PMOS = "nch_lvt", "pch_lvt"
+LMIN, LMAX = 130e-9, 2e-6
 
 # EDIT: nominal operating conditions for this PDK.
 COND = dict(vdd=1.2, vin_cm=0.6, vout_dc=0.6, cout=5e-12)
-LMIN, LMAX = 130e-9, 2e-6
 
+# EDIT: knob bounds. Names must match the circuit's KNOBS.
 PARAMETERS = [
     Knob("M1a_GMID", (10, 20)),
     Knob("M2a_GMID", (10, 20)),
@@ -34,7 +36,7 @@ TARGET_SPECS = {
     "Itotal": Spec(20e-6, "min", 1.0),
     "Output_Swing": Spec(0.4 * COND["vdd"], "max", 1.0),
     "VOUT_DC": Spec(COND["vout_dc"], "eq", 2.0),
-    "Margin min":   Spec(0.02, "max", 1.0, scale=0.05),   # saturation margin of the devices under the fixed biases, every corner
+    "Margin min":   Spec(0.02, "max", 1.0, scale=0.05),
 }
 
 # EDIT: one Corner per process LUT (voltage corners reuse a LUT with overridden COND).

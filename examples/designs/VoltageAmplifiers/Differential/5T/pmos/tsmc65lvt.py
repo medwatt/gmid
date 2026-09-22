@@ -1,6 +1,7 @@
 from design import Circuit, run
 from mosplot.optimizer import Corner, Knob, Spec
 
+# EDIT: PDK lookup tables and device names.
 LUT_DIR = "/home/medwatt/coding/gmid_lookup"
 NMOS, PMOS = "nch_lvt", "pch_lvt"
 LMIN, LMAX = 100e-9, 5e-6
@@ -8,6 +9,7 @@ LMIN, LMAX = 100e-9, 5e-6
 # EDIT: nominal operating conditions for this PDK.
 COND = dict(vdd=1.2, vin_cm=0.6, vout_cm=0.6, cout=5e-12)
 
+# EDIT: knob bounds. Names must match the circuit's KNOBS.
 PARAMETERS = [
     Knob("M1a_GMID", (10, 20)),
     Knob("M2a_GMID", (10, 20)),
