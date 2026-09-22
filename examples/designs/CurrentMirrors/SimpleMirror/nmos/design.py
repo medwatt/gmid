@@ -18,6 +18,7 @@ class Circuit(CircuitModel):
     PORTS = ["IREF", "VOUT", "vdd", "vss"]
     GROUND = "vss"
 
+    # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
         Instance("M1", "nmos", d="IREF", g="IREF", s="gnd", b="gnd"),
         Instance("M2", "nmos", d="VOUT", g="IREF", s="gnd", b="gnd"),
@@ -33,6 +34,7 @@ class Circuit(CircuitModel):
 
     SIGNAL_NODES = set()
 
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M1_GMID", role="op", sets_width_of="M1"),
         Knob("M1_L", role="geom"),
@@ -40,10 +42,12 @@ class Circuit(CircuitModel):
 
     RECORNER_RESOLVE = []
 
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("M1_VDS", seed=lambda c: c["vdd"] / 3, bound=lambda c: (0.02, c["vdd"])),
     ]
 
+    # ---------- (4) SOLVE_POINT ----------
     def solve_point(self, v, dev, cond):
         VOUT_DC = cond["vout_dc"]
         IREF = cond["iref"]
@@ -87,11 +91,13 @@ class Circuit(CircuitModel):
             M1_VDS=v.M1_VDS,
         )
 
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b):
         return [
             vres(b.M1_VDS, b.M1.vgs),
         ]
 
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond):
         Rout = 1.0 / (b.M2.gds_id * b.ID["M2"])
         Area = b.L["M1"] * b.W["M1"] + b.L["M2"] * b.W["M2"]
@@ -106,6 +112,7 @@ class Circuit(CircuitModel):
             "Itotal": Itotal,
         }
 
+    # ---------- (8) NETLIST HOOKS ----------
     def netlist_context(self, corner, ref_op=None) -> dict:
         return {"iref": corner.cond("iref"), "k": corner.cond("k")}
 

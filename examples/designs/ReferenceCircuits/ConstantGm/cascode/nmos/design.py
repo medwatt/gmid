@@ -20,7 +20,7 @@ class Circuit(CircuitModel):
     PORTS = ["vbn", "vdd", "vss"]
     GROUND = "vss"
 
-    # ============================================================= (1) TOPOLOGY
+    # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
         Instance("M1", "nmos", d="nA", g="vbn", s="nR", b="vss"),
         Instance("M2", "nmos", d="vbn", g="vbn", s="vss", b="vss"),
@@ -35,7 +35,7 @@ class Circuit(CircuitModel):
     VSOURCES = [VSource("VDD", p="vdd", n="vss", supply=True)]
     SIGNAL_NODES = set()
 
-    # ============================================================= (2) KNOBS
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M2_GMID", role="op", sets_width_of="M2"),  # NMOS mirror diode gm/ID
         Knob("M4_GMID", role="op", sets_width_of="M4"),  # NMOS cascode diode gm/ID
@@ -48,12 +48,9 @@ class Circuit(CircuitModel):
         Knob("K", role="geom"),  # M1 is K x wider than M2
         Knob("IREF", role="external"),  # left-branch current I_A
     ]
-    # Constant-gm: the physical resistor R is conserved across corners (a derived value);
-    # IREF re-solves so the self-bias loop VnR = IREF*R closes on every corner's LUT.
     RECORNER_RESOLVE = ["IREF"]
 
-    # ============================================================= (3) UNKNOWNS
-    # node voltages (diode nodes + driven nodes) + driven-device gm/IDs + right current.
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("V_vbn", seed=lambda c: 0.38 * c["vdd"], bound=lambda c: (0.05, c["vdd"])),
         Unknown("V_ncn", seed=lambda c: 0.62 * c["vdd"], bound=lambda c: (0.05, c["vdd"])),
@@ -69,24 +66,21 @@ class Circuit(CircuitModel):
         Unknown("I_B", seed=lambda c: 20e-6, bound=(1e-6, 1e-3)),
     ]
 
-    # ============================================================= (4) SOLVE_POINT
+    # ---------- (4) SOLVE_POINT ----------
     def solve_point(self, v: State, dev, cond) -> State:
         VDD = cond["vdd"]
         I_A, I_B, K = v.IREF, v.I_B, v.K
 
-        # --- diode references (gm/ID = knob); looked up at their own VDS, real vsb ---
         M2 = dev.nmos(gmid=v.M2_GMID, L=v.L_n, vds=v.V_vbn, vsb=0.0)
         M4 = dev.nmos(gmid=v.M4_GMID, L=v.L_nc, vds=v.V_ncn - v.V_vbn, vsb=v.V_vbn)
         M5 = dev.pmos(gmid=v.M5_GMID, L=v.L_pc, vds=v.V_npm - v.V_ncp, vsb=VDD - v.V_npm)
         M7 = dev.pmos(gmid=v.M7_GMID, L=v.L_pm, vds=VDD - v.V_npm, vsb=0.0)
 
-        # --- driven devices (gm/ID = unknown); looked up at own VDS, real vsb ---
         M1 = dev.nmos(gmid=v.M1_GMID, L=v.L_n, vds=v.V_nA - v.V_nR, vsb=v.V_nR)
         M3 = dev.nmos(gmid=v.M3_GMID, L=v.L_nc, vds=v.V_ncp - v.V_nA, vsb=v.V_nA)
         M6 = dev.pmos(gmid=v.M6_GMID, L=v.L_pc, vds=v.V_nB - v.V_ncn, vsb=VDD - v.V_nB)
         M8 = dev.pmos(gmid=v.M8_GMID, L=v.L_pm, vds=VDD - v.V_nB, vsb=0.0)
 
-        # --- widths: diodes carry their branch current; driven by matching ---
         W = {
             "M2": I_B / M2.jd,
             "M4": I_B / M4.jd,  # right-branch diodes carry I_B
@@ -152,39 +146,33 @@ class Circuit(CircuitModel):
             V_nB=v.V_nB,
         )
 
-    # ============================================================= (5) RESIDUALS  (12 == 12)
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
-            # --- diode self-consistency (VDS = VGS) ---
             vres(b.V_vbn, b.M2.vgs),  # M2
             vres(b.V_ncn - b.V_vbn, b.M4.vgs),  # M4
             vres(b.V_npm - b.V_ncp, b.M5.vgs),  # M5 (VSD = VSG)
             vres(b.VDD - b.V_npm, b.M7.vgs),  # M7
-            # --- driven-device VGS closures (gate node - source node) ---
             vres(b.M1.vgs, b.V_vbn - b.V_nR),  # M1 g=vbn s=nR
             vres(b.M3.vgs, b.V_ncn - b.V_nA),  # M3 g=ncn s=nA
             vres(b.M6.vgs, b.V_nB - b.V_ncp),  # M6 VSG = V_nB - V_ncp (g=ncp)
             vres(b.M8.vgs, b.VDD - b.V_npm),  # M8 VSG = VDD - V_npm
-            # --- branch-current consistency (driven device W*jd == branch current) ---
             rres(b.IA, b.W["M1"] * b.M1.jd, b.IA),  # M1 carries I_A
             rres(b.IA, b.W["M3"] * b.M3.jd, b.IA),  # M3 carries I_A
             rres(b.I_B, b.W["M6"] * b.M6.jd, b.I_B),  # M6 carries I_B
             rres(b.I_B, b.W["M8"] * b.M8.jd, b.I_B),  # M8 carries I_B (mirror copy)
         ]
 
-    # ====================================================== (7) MULTICORNER CONSERVATION
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {"R": b.R}
 
     def recorner_residuals(self, b, frozen) -> list:
         return [rres(b.V_nR, b.IA * frozen["extra"]["R"], b.V_nR)]
 
-    # ============================================================= (6) SPECS
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         gm2 = b.GMID["M2"] * b.I_B  # M2 carries I_B
-        # saturation margin of the non-diode stacked devices (the cascodes + the
-        # mirror output + the degenerated device). Diodes (M2,M4,M5,M7) are saturated
-        # by construction. Driving min(VDS-VDSAT) up keeps M3/M6 out of triode.
         crit = {"M1": b.M1, "M3": b.M3, "M6": b.M6, "M8": b.M8}
         vds_margin = min(pt.vds_used - pt.vdsat for pt in crit.values())
         return {
@@ -202,7 +190,7 @@ class Circuit(CircuitModel):
             "PMOS_GMID": b.GMID["M7"],
         }
 
-    # ---- netlist hook: R = V_nR / I_A on the reference op ----
+    # ---------- (8) NETLIST HOOKS ----------
     def passive_values(self, ref_op) -> dict:
         return {"R": ref_op.V_nR / ref_op.IA}
 

@@ -43,7 +43,7 @@ class Circuit(CircuitModel):
     ]
     SIGNAL_NODES = {"VINP", "VINN"}
 
-    # ---------- (2) KNOBS (names + roles only; bounds live in the config) ----------
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M1a_GMID", role="op", sets_width_of="M1a"),
         Knob("M2a_GMID", role="op", sets_width_of="M2a"),
@@ -54,14 +54,9 @@ class Circuit(CircuitModel):
         Knob("M1a_ID", role="external"),
         Knob("M3_VDSAT_MARGIN", role="external"),
     ]
-    # Multicorner [1]: the load-bias reference current IREF_Mvbn is CONSERVED across corners
-    # (freeze_extra + recorner_residuals below) and re-solves the branch current M1a_ID. The
-    # tail gate VCMFB is not a fixed bias: the CMFB loop moves it until the tail carries twice
-    # the load current, so nothing about M3 is conserved (conserving its replica current as
-    # well left the re-solve with one equation too many).
     RECORNER_RESOLVE = ["M1a_ID"]
 
-    # ---------- (3) UNKNOWNS (node VDS/VSB the DC solver finds) ----------
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("M1a_VDS", seed=lambda c: c["vdd"] / 3, bound=lambda c: (0.02, c["vdd"])),
         Unknown("M2a_VDS", seed=lambda c: c["vdd"] / 3, bound=lambda c: (0.02, c["vdd"])),
@@ -164,7 +159,7 @@ class Circuit(CircuitModel):
             Mvcmfb_GMID=v.Mvcmfb_GMID,
         )
 
-    # ---------- (5) RESIDUALS (node closures the solver drives to zero) ----------
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
             vres(b.M1a_VDS, b.VIN_CM + b.M1a.vgs - b.VOUT_CM),
@@ -174,7 +169,7 @@ class Circuit(CircuitModel):
             vres(b.Mvcmfb.vgs, b.M3.vgs), # diode replica shares the master's VGS
         ]
 
-    # ---------- (7) MULTICORNER CONSERVATION ----------
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {"IREF_Mvbn": b.IREF_Mvbn}
 
@@ -184,7 +179,7 @@ class Circuit(CircuitModel):
             rres(b.IREF_Mvbn, e["IREF_Mvbn"], e["IREF_Mvbn"]),
         ]
 
-    # ---------- (6) SPECS ----------
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         ss = build_ss_model(
             self.MOSFETS,
@@ -226,7 +221,7 @@ class Circuit(CircuitModel):
         out["Output_Swing"] = Output_Swing
         return out
 
-    # ---------- netlist hooks ----------
+    # ---------- (8) NETLIST HOOKS ----------
     def mirror_currents(self, ref_op) -> dict:
         return {"VBN": ref_op.IREF_Mvbn}
 

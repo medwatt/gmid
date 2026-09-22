@@ -49,7 +49,7 @@ class Circuit(CircuitModel):
     ]
     SIGNAL_NODES = {"VINP", "VINN"}
 
-    # ---------- (2) KNOBS (names + roles only; bounds live in the config) ----------
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M1a_GMID", role="op", sets_width_of="M1a"),
         Knob("M2a_GMID", role="op", sets_width_of="M2a"),
@@ -68,15 +68,9 @@ class Circuit(CircuitModel):
         Knob("M5a_VDSAT_MARGIN", role="external"),
         Knob("M2a_VDSAT_MARGIN", role="external"),
     ]
-    # Multicorner [1]: what stays fixed on the chip when the process moves is CONSERVED across
-    # corners (freeze_extra + recorner_residuals below): the two diode reference currents, and
-    # the two cascode bias voltages, which the netlist emits as fixed sources. Each conserved
-    # quantity re-solves one knob: the two reference currents fix the tail current (M1a_ID)
-    # and the folding current (M5a_ID_over_M1a_ID); the cascode voltages fix the two
-    # saturation margins they are derived from.
     RECORNER_RESOLVE = ["M1a_ID", "M5a_ID_over_M1a_ID", "M5a_VDSAT_MARGIN", "M2a_VDSAT_MARGIN"]
 
-    # ---------- (3) UNKNOWNS (node VDS/VSB the DC solver finds) ----------
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("M1a_VDS", seed=lambda c: c["vdd"] / 3, bound=lambda c: (0.02, c["vdd"])),
         Unknown("M2a_VDS", seed=lambda c: c["vdd"] / 4, bound=lambda c: (0.02, c["vdd"])),
@@ -251,7 +245,7 @@ class Circuit(CircuitModel):
             Mvbtail_GMID=v.Mvbtail_GMID,
         )
 
-    # ---------- (5) RESIDUALS (node closures the solver drives to zero) ----------
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
             vres(b.M1a_VDS, b.VIN_CM + b.M1a.vgs - b.M2a.vds_used),
@@ -276,7 +270,7 @@ class Circuit(CircuitModel):
             vres(b.Mvbtail.vgs, b.M6.vgs),  # diode replica shares the master's VGS
         ]
 
-    # ---------- (7) MULTICORNER CONSERVATION ----------
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {"IREF_Mvbn": b.IREF_Mvbn, "IREF_Mvbtail": b.IREF_Mvbtail, "VCASCN": b.VCASCN, "VCASCP": b.VCASCP}
 
@@ -289,7 +283,7 @@ class Circuit(CircuitModel):
             vres(b.VCASCP, e["VCASCP"], 0.05),
         ]
 
-    # ---------- (6) SPECS ----------
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         ss = build_ss_model(
             self.MOSFETS,
@@ -348,14 +342,12 @@ class Circuit(CircuitModel):
         out["VIN_MIN"] = VIN_MIN
         Output_Swing = VOUT_MAX - VOUT_MIN
         out["Output_Swing"] = Output_Swing
-        # saturation margins of the devices whose VDS the fixed cascode biases set: re-solved
-        # on every non-reference corner, so they show what the corner does to them
         out["M2a margin"] = b.M2a_VDSAT_MARGIN
         out["M5a margin"] = b.M5a_VDSAT_MARGIN
         out["Margin min"] = min(b.M2a_VDSAT_MARGIN, b.M5a_VDSAT_MARGIN)
         return out
 
-    # ---------- netlist hooks ----------
+    # ---------- (8) NETLIST HOOKS ----------
     def vsource_values(self, ref_op, frozen) -> dict:
         return {"VCASCN": ref_op.VCASCN, "VCASCP": ref_op.VCASCP}
 

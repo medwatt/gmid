@@ -19,6 +19,7 @@ class Circuit(CircuitModel):
     PORTS = ["IREF", "VOUT", "vdd", "vss"]
     GROUND = "vss"
 
+    # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
         Instance("M1", "pmos", d="n01", g="IREF", s="vdd", b="vdd"),
         Instance("M2", "pmos", d="n02", g="IREF", s="vdd", b="vdd"),
@@ -37,6 +38,7 @@ class Circuit(CircuitModel):
 
     SIGNAL_NODES = set()
 
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M1_GMID", role="op", sets_width_of="M1"),
         Knob("M1_L", role="geom"),
@@ -45,15 +47,15 @@ class Circuit(CircuitModel):
         Knob("VDSAT_MARGIN", role="external"),   # M1 margin: sets the cascode bias VBP
     ]
 
-    # Multicorner: VBP is emitted as a fixed source, so it is CONSERVED across corners and
-    # re-solves the margin it was derived from (the margin then shows what the corner does).
     RECORNER_RESOLVE = ["VDSAT_MARGIN"]
 
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("M1_VDS", seed=lambda c: c["vdd"] / 4, bound=lambda c: (0.02, c["vdd"])),
         Unknown("M2_VDS", seed=lambda c: c["vdd"] / 4, bound=lambda c: (0.02, c["vdd"])),
     ]
 
+    # ---------- (4) SOLVE_POINT ----------
     def solve_point(self, v, dev, cond):
         VDD = cond["vdd"]
         IREF = cond["iref"]
@@ -109,12 +111,21 @@ class Circuit(CircuitModel):
             MARGIN=MARGIN,
         )
 
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b):
         return [
             vres(b.M1_VDS, b.M1.vdsat + b.MARGIN),
             vres(b.M2_VDS, b.VDD - b.VBP - b.M3.vgs),   # M3's source sits one VGS from the shared bias
         ]
 
+    # ---------- (6) MULTICORNER CONSERVATION ----------
+    def freeze_extra(self, b) -> dict:
+        return {"VBP": b.VBP}
+
+    def recorner_residuals(self, b, frozen) -> list:
+        return [vres(b.VBP, frozen["extra"]["VBP"], 0.05)]
+
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond):
         ss_model = build_ss_model(
             self.MOSFETS,
@@ -140,19 +151,13 @@ class Circuit(CircuitModel):
             "Iout": b.ID["M2"],
             "Area": Area,
             "Itotal": Itotal,
-            # M1 margin (re-solved on other corners: VB is fixed) and M2 margin
             "M1 margin": b.MARGIN,
             "M2 margin": b.M2_VDS - b.M2.vdsat,
             "Margin min": min(b.MARGIN, b.M2_VDS - b.M2.vdsat),
             "VBP": b.VBP,
         }
 
-    def freeze_extra(self, b) -> dict:
-        return {"VBP": b.VBP}
-
-    def recorner_residuals(self, b, frozen) -> list:
-        return [vres(b.VBP, frozen["extra"]["VBP"], 0.05)]
-
+    # ---------- (8) NETLIST HOOKS ----------
     def vsource_values(self, ref_op, frozen) -> dict:
         return dict(frozen["extra"])
 

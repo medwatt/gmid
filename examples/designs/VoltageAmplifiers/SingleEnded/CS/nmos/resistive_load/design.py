@@ -20,6 +20,7 @@ class Circuit(CircuitModel):
     PORTS = ["VIN", "VOUT", "vdd", "vss"]
     GROUND = "vss"
 
+    # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
         Instance("M1", "nmos", d="VOUT", g="VIN", s="vss", b="vss"),
     ]
@@ -35,6 +36,7 @@ class Circuit(CircuitModel):
 
     SIGNAL_NODES = {"VIN"}
 
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M1_GMID", role="op", sets_width_of="M1"),
         Knob("M1_L", role="geom"),
@@ -44,8 +46,10 @@ class Circuit(CircuitModel):
 
     RECORNER_RESOLVE = ["VOUT_Q"]
 
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = []
 
+    # ---------- (4) SOLVE_POINT ----------
     def solve_point(self, v, dev, cond):
         VDD = cond["vdd"]
         VOUT_DC = v.VOUT_Q
@@ -81,9 +85,18 @@ class Circuit(CircuitModel):
             R1=v.R1
         )
 
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b):
         return []
 
+    # ---------- (6) MULTICORNER CONSERVATION ----------
+    def freeze_extra(self, b) -> dict:
+        return {"VIN_DC": b.VIN_DC}
+
+    def recorner_residuals(self, b, frozen) -> list:
+        return [vres(b.VIN_DC, frozen["extra"]["VIN_DC"], 0.05)]
+
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond):
         ss_model = build_ss_model(
             self.MOSFETS,
@@ -113,12 +126,7 @@ class Circuit(CircuitModel):
             "Output_Swing": Output_Swing,
         }
 
-    def freeze_extra(self, b) -> dict:
-        return {"VIN_DC": b.VIN_DC}
-
-    def recorner_residuals(self, b, frozen) -> list:
-        return [vres(b.VIN_DC, frozen["extra"]["VIN_DC"], 0.05)]
-
+    # ---------- (8) NETLIST HOOKS ----------
     def passive_values(self, ref_op, frozen=None):
         return {"R1": ref_op.R1}
 

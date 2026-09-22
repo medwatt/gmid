@@ -26,24 +26,18 @@ class Circuit(CircuitModel):
 
     # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
-        # PMOS input pair (carries LOW common mode), PMOS tail from vdd
         Instance("MP1a", "pmos", d="n01", g="VINP", s="ptail", b="vdd"),
         Instance("MP1b", "pmos", d="n03", g="VINN", s="ptail", b="vdd"),
         Instance("MTP", "pmos", d="ptail", g="vbtp", s="vdd", b="vdd"),
-        # NMOS input pair (carries HIGH common mode), NMOS tail to vss
         Instance("MN1a", "nmos", d="n05", g="VINP", s="ntail", b="vss"),
         Instance("MN1b", "nmos", d="n06", g="VINN", s="ntail", b="vss"),
         Instance("MTN", "nmos", d="ntail", g="vbtn", s="vss", b="vss"),
-        # bottom NMOS current sinks (PMOS-pair folding nodes)
         Instance("M2a", "nmos", d="n01", g="vbn", s="vss", b="vss"),
         Instance("M2b", "nmos", d="n03", g="vbn", s="vss", b="vss"),
-        # NMOS cascodes (n01->n04 mirror, n03->VOUT)
         Instance("M3a", "nmos", d="n04", g="vcascn", s="n01", b="vss"),
         Instance("M3b", "nmos", d="VOUT", g="vcascn", s="n03", b="vss"),
-        # PMOS cascodes (n05->n04 mirror, n06->VOUT)
         Instance("M4a", "pmos", d="n04", g="vcascp", s="n05", b="vdd"),
         Instance("M4b", "pmos", d="VOUT", g="vcascp", s="n06", b="vdd"),
-        # top PMOS current sources, self-biased cascode mirror via n04
         Instance("M5a", "pmos", d="n05", g="n04", s="vdd", b="vdd"),
         Instance("M5b", "pmos", d="n06", g="n04", s="vdd", b="vdd"),
     ]
@@ -78,18 +72,12 @@ class Circuit(CircuitModel):
         Knob("M5a_L", role="geom"),
         Knob("MTP_L", role="geom"),
         Knob("MTN_L", role="geom"),
-        Knob("M5a_ID_over_MP1a_ID", role="geom"),   # cascode standing current / pmos-branch current
+        Knob("M5a_ID_over_MP1a_ID", role="geom"),
         Knob("MN1a_ID_over_MP1a_ID", role="geom"),  # nmos input current / pmos input current
         Knob("MP1a_ID", role="external"),
         Knob("M5a_VDSAT_MARGIN", role="external"),
         Knob("M2a_VDSAT_MARGIN", role="external"),
     ]
-    # Multicorner: what stays fixed on the chip is CONSERVED across corners (freeze_extra +
-    # recorner_residuals): the three mirror reference currents and the two cascode bias
-    # voltages (fixed sources in the netlist). Each conserved quantity re-solves the knob it
-    # determines: IREF_Mvbtp -> the PMOS-pair current (MP1a_ID), IREF_Mvbtn -> the NMOS-pair
-    # current (MN1a_ID_over_MP1a_ID), IREF_Mvbn -> the cascode current through M2a
-    # (M5a_ID_over_MP1a_ID); VCASCN, VCASCP -> the two saturation margins they are derived from.
     RECORNER_RESOLVE = ["MP1a_ID", "MN1a_ID_over_MP1a_ID", "M5a_ID_over_MP1a_ID",
                         "M2a_VDSAT_MARGIN", "M5a_VDSAT_MARGIN"]
 
@@ -118,21 +106,17 @@ class Circuit(CircuitModel):
         VIN_CM = cond["vin_cm"]
         VOUT_DC = cond["vout_dc"]
 
-        # --- bottom/output half (identical to the verified Folded/pmos core) ---
         M2a = dev.nmos(gmid=v.M2a_GMID, L=v.M2a_L, vds=v.M2a_VDS, vsb=0.0)
         M5a = dev.pmos(gmid=v.M5a_GMID, L=v.M5a_L, vds=v.M5a_VDS, vsb=0.0)
 
-        # --- PMOS input pair + PMOS tail ---
         MP1a = dev.pmos(gmid=v.MP1a_GMID, L=v.MP1a_L, vds=v.MP1a_VDS, vsb=0.0)
         MTP_VDS = VDD - VIN_CM - MP1a.vgs
         MTP = dev.pmos(gmid=v.MTP_GMID, L=v.MTP_L, vds=MTP_VDS, vsb=0.0)
 
-        # --- NMOS input pair + NMOS tail (source ntail is above vss -> real VSB) ---
         MN1a = dev.nmos(gmid=v.MN1a_GMID, L=v.MN1a_L, vds=v.MN1a_VDS, vsb=v.MN1_VSB)
         MTN_VDS = VIN_CM - MN1a.vgs
         MTN = dev.nmos(gmid=v.MTN_GMID, L=v.MTN_L, vds=MTN_VDS, vsb=0.0)
 
-        # --- cascodes / sinks ---
         M3a_VSB = M2a.vds_used
         M3a = dev.nmos(gmid=v.M3a_GMID, L=v.M3a_L, vds=v.M3a_VDS, vsb=M3a_VSB)
         M4a_VSB = M5a.vds_used
@@ -141,7 +125,6 @@ class Circuit(CircuitModel):
         M3b = dev.nmos(gmid=v.M3a_GMID, L=v.M3a_L, vds=M3b_VDS, vsb=v.M3b_VSB)
         M4b = dev.pmos(gmid=v.M4a_GMID, L=v.M4a_L, vds=v.M4b_VDS, vsb=v.M4b_VSB)
 
-        # --- output-side copies (computed closures) ---
         M5b_VDS = M4a.vgs - M4b.vgs + M5a.vds_used
         M5b = dev.pmos(gmid=v.M5a_GMID, L=v.M5a_L, vds=M5b_VDS, vsb=0.0)
         M2b_VDS = M2a.vds_used + M3a.vgs - M3b.vgs
@@ -151,14 +134,10 @@ class Circuit(CircuitModel):
         MN1b_VDS = VDD - M5b.vds_used - VIN_CM + MN1a.vgs
         MN1b = dev.nmos(gmid=v.MN1a_GMID, L=v.MN1a_L, vds=MN1b_VDS, vsb=v.MN1_VSB)
 
-        # --- diode replicas for the three mirror biases ---
         Mvbn = dev.nmos(gmid=v.Mvbn_GMID, L=v.M2a_L, vds=M2a.vgs, vsb=0.0)
         Mvbtp = dev.pmos(gmid=v.Mvbtp_GMID, L=v.MTP_L, vds=MTP.vgs, vsb=0.0)
         Mvbtn = dev.nmos(gmid=v.Mvbtn_GMID, L=v.MTN_L, vds=MTN.vgs, vsb=0.0)
 
-        # ---------- currents ----------
-        # Ip: per PMOS-input device.  In: per NMOS-input device.
-        # Ic: cascode standing current.  I5 = Ic + In: per top source.
         Ip = v.MP1a_ID
         In = v.MN1a_ID_over_MP1a_ID * Ip
         Ic = v.M5a_ID_over_MP1a_ID * Ip
@@ -180,7 +159,6 @@ class Circuit(CircuitModel):
         ID["M2a"] = Ic + Ip
         ID["M2b"] = Ic + Ip
 
-        # ---------- widths ----------
         W = {}
         W["MP1a"] = ID["MP1a"] / MP1a.jd
         W["MP1b"] = W["MP1a"]
@@ -207,7 +185,6 @@ class Circuit(CircuitModel):
         ID["Mvbtn"] = ID["MTN"]
         IREF_Mvbtn = ID["MTN"] * Mvbtn.jd / MTN.jd
 
-        # ---------- lengths / gm-ID bookkeeping ----------
         L = {
             "MP1a": v.MP1a_L, "MP1b": v.MP1a_L, "MTP": v.MTP_L,
             "MN1a": v.MN1a_L, "MN1b": v.MN1a_L, "MTN": v.MTN_L,
@@ -277,19 +254,12 @@ class Circuit(CircuitModel):
     # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
-            # PMOS input pair (mirror side) leaves saturation closure
             vres(b.MP1a_VDS, b.VIN_CM + b.MP1a.vgs - b.M2a.vds_used),
-            # bottom sink VDS pinned by a chosen VDSAT margin
             vres(b.M2a_VDS, b.M2a.vdsat + b.M2a_VDSAT_MARGIN),
-            # NMOS cascode mirror-side VDS (node n04 - node n01)
             vres(b.M3a_VDS, b.VDD - b.M2a.vds_used - b.M5a.vgs),
-            # PMOS cascode mirror-side VDS (node n05 - node n04)
             vres(b.M4a_VDS, -b.M5a.vds_used + b.M5a.vgs),
-            # top source VDS pinned by a chosen VDSAT margin
             vres(b.M5a_VDS, b.M5a.vdsat + b.M5a_VDSAT_MARGIN),
-            # output-side NMOS cascode source (node n03)
             vres(b.M3b_VSB, b.M2a.vds_used + b.M3a.vgs - b.M3b.vgs),
-            # output-side PMOS cascode VDS (VOUT path)
             vres(
                 b.M4b_VDS,
                 b.VDD
@@ -301,13 +271,9 @@ class Circuit(CircuitModel):
                 + b.M4b.vgs
                 - b.M5a.vds_used,
             ),
-            # output-side PMOS cascode source (node n06)
             vres(b.M4b_VSB, b.M4a.vgs - b.M4b.vgs + b.M5a.vds_used),
-            # NMOS input pair (mirror side) VDS (node n05 - node ntail)
             vres(b.MN1a_VDS, b.VDD - b.M5a.vds_used - b.VIN_CM + b.MN1a.vgs),
-            # NMOS pair source-body bias (ntail above vss)
             vres(b.MN1_VSB, b.VIN_CM - b.MN1a.vgs),
-            # diode replicas share each master's VGS
             vres(b.Mvbn.vgs, b.M2a.vgs),
             vres(b.Mvbtp.vgs, b.MTP.vgs),
             vres(b.Mvbtn.vgs, b.MTN.vgs),
@@ -355,7 +321,6 @@ class Circuit(CircuitModel):
         Area = sum(b.L[k] * b.W[k] for k in b.W)
         out["Area"] = Area
 
-        # Supply current: PMOS tail + both top sources == NMOS tail + both sinks.
         Ip = b.ID["MP1a"]
         In = b.ID["MN1a"]
         Ic = b.ID["M3a"]
@@ -367,17 +332,14 @@ class Circuit(CircuitModel):
         out["VCASCN"] = b.VCASCN
         out["VCASCP"] = b.VCASCP
 
-        # Output centering (same closure as the Folded/pmos core).
         out["VOUT_DC"] = b.M2a.vds_used + b.M3a.vgs + b.M3b.vds_used - b.M3b.vgs
 
-        # Output swing (cascoded both ends).
         VOUT_MAX = -b.M4b.vdsat + b.M4b.vgs + b.VCASCP
         VOUT_MIN = b.M3b.vdsat - b.M3b.vgs + b.VCASCN
         out["VOUT_MAX"] = VOUT_MAX
         out["VOUT_MIN"] = VOUT_MIN
         out["Output_Swing"] = VOUT_MAX - VOUT_MIN
 
-        # ----- input common-mode range from full-stage saturation constraints -----
         PMOS_pair_min = max(
             b.MP1a.vdsat - b.MP1a.vgs - b.M3a.vgs + b.VCASCN,
             b.MP1b.vdsat - b.MP1b.vgs - b.M3b.vgs + b.VCASCN,
@@ -400,14 +362,12 @@ class Circuit(CircuitModel):
         out["NMOS_floor"] = NMOS_floor
         out["PMOS_ceiling"] = PMOS_ceiling
         out["ICMR_overlap"] = PMOS_ceiling - NMOS_floor
-        # saturation margins of the devices whose VDS the fixed cascode biases set: re-solved
-        # on every non-reference corner, so they show what the corner does to them
         out["M2a margin"] = b.M2a_VDSAT_MARGIN
         out["M5a margin"] = b.M5a_VDSAT_MARGIN
         out["Margin min"] = min(b.M2a_VDSAT_MARGIN, b.M5a_VDSAT_MARGIN)
         return out
 
-    # ---------- netlist hooks ----------
+    # ---------- (8) NETLIST HOOKS ----------
     def vsource_values(self, ref_op, frozen) -> dict:
         return {"VCASCN": ref_op.VCASCN, "VCASCP": ref_op.VCASCP}
 

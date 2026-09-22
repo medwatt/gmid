@@ -20,6 +20,7 @@ class Circuit(CircuitModel):
     PORTS = ["vout", "vdd", "vss"]
     GROUND = "vss"
 
+    # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
         Instance("M1", "pmos", d="n4", g="vout", s="n2", b="vdd"),
         Instance("M2", "pmos", d="n5", g="vout", s="vdd", b="vdd"),
@@ -38,6 +39,7 @@ class Circuit(CircuitModel):
     VSOURCES = [VSource("VDD", p="vdd", n="vss", supply=True)]
     SIGNAL_NODES = set()
 
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M2_GMID", role="op", sets_width_of="M2"),
         Knob("M3_GMID", role="op", sets_width_of="M3"),
@@ -54,6 +56,7 @@ class Circuit(CircuitModel):
     ]
     RECORNER_RESOLVE = ["IREF", "Rn_V", "Rp_V"]
 
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("V_vout", seed=lambda c: 0.65 * c["vdd"], bound=lambda c: (0.05, c["vdd"])),
         Unknown("V_n2", seed=lambda c: 0.92 * c["vdd"], bound=lambda c: (0.05, c["vdd"])),
@@ -71,6 +74,7 @@ class Circuit(CircuitModel):
         Unknown("I_R", seed=lambda c: 20e-6, bound=(1e-6, 1e-3)),
     ]
 
+    # ---------- (4) SOLVE_POINT ----------
     def solve_point(self, v: State, dev, cond) -> State:
         VDD = cond["vdd"]
         I_L, I_R, K = v.IREF, v.I_R, v.K
@@ -155,6 +159,7 @@ class Circuit(CircuitModel):
             Rp_V=v.Rp_V,
         )
 
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
             vres(b.M1.vgs, b.V_n2 - b.V_vout),
@@ -173,6 +178,7 @@ class Circuit(CircuitModel):
             vres(b.V_vout - b.V_n6, b.Rp_V),
         ]
 
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {"R1": b.R1, "Rn": b.Rn, "Rp": b.Rp}
 
@@ -184,6 +190,7 @@ class Circuit(CircuitModel):
             rres(b.V_vout - b.V_n6, b.I_R * e["Rp"], b.V_vout - b.V_n6),
         ]
 
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         gm2 = b.GMID["M2"] * b.I_R
         crit = [b.M1, b.M2, b.M3, b.M4, b.M5, b.M6, b.M7, b.M8]
@@ -205,6 +212,7 @@ class Circuit(CircuitModel):
             "NMOS_GMID": b.GMID["M7"],
         }
 
+    # ---------- (8) NETLIST HOOKS ----------
     def passive_values(self, ref_op) -> dict:
         return {"R1": ref_op.R1, "Rn": ref_op.Rn, "Rp": ref_op.Rp}
 

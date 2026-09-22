@@ -93,7 +93,7 @@ class Circuit(CircuitModel):
             vres(b.Mvbp.vgs, b.M2.vgs),   # diode replica shares the master's VGS
         ]
 
-    # ---------- (7) MULTICORNER CONSERVATION ----------
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {'IREF_Mvbp': b.IREF_Mvbp, 'VIN': b.M1.vgs}
 
@@ -102,7 +102,7 @@ class Circuit(CircuitModel):
         return [rres(b.IREF_Mvbp, e['IREF_Mvbp'], e['IREF_Mvbp']),
                 vres(b.M1.vgs, e['VIN'], 0.05)]
 
-    # ---------- (6) SPECS ----------
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         ss = build_ss_model(self.MOSFETS, self.PASSIVES, self.VSOURCES, b.ss,
                             {'COUT': cond['cout']}, signal_nodes=self.SIGNAL_NODES)
@@ -129,7 +129,7 @@ class Circuit(CircuitModel):
         out['Output_Swing'] = Output_Swing
         return out
 
-    # ---------- netlist hooks ----------
+    # ---------- (8) NETLIST HOOKS ----------
     def mirror_currents(self, ref_op) -> dict:
         return {'VBP': ref_op.IREF_Mvbp}
 

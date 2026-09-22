@@ -44,7 +44,7 @@ class Circuit(CircuitModel):
     ]
     SIGNAL_NODES = {"VINP", "VINN"}
 
-    # ---------- (2) KNOBS (names + roles only; bounds live in the config) ----------
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M1a_GMID", role="op", sets_width_of="M1a"),
         Knob("M2a_GMID", role="op", sets_width_of="M2a"),
@@ -59,13 +59,9 @@ class Circuit(CircuitModel):
         Knob("Rz", role="geom"),
         Knob("M1a_ID", role="external"),
     ]
-    # Multicorner [1]: the diode reference currents IREF are CONSERVED across corners
-    # (freeze_extra + recorner_residuals below); the branch currents are re-solved so the
-    # tail's delivered current drifts as the real fixed-IREF mirror makes it. VDSAT margins
-    # stay conserved (frozen externals); every derived bias voltage floats.
     RECORNER_RESOLVE = ["M1a_ID"]
 
-    # ---------- (3) UNKNOWNS (self-referential lookup inputs) ----------
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("M1b_VDS", seed=lambda c: c["vdd"] / 3, bound=lambda c: (0.02, c["vdd"])),
         Unknown("M2a_VDS", seed=lambda c: c["vdd"] / 3, bound=lambda c: (0.02, c["vdd"])),
@@ -180,7 +176,7 @@ class Circuit(CircuitModel):
             Mvbp_GMID=v.Mvbp_GMID,
         )
 
-    # ---------- (5) RESIDUALS (node closures the solver drives to zero) ----------
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
             vres(b.M1b_VDS, b.VIN_CM + b.M1b.vgs - b.M4.vgs),
@@ -188,7 +184,7 @@ class Circuit(CircuitModel):
             vres(b.Mvbp.vgs, b.M3.vgs),  # diode replica shares the master's VGS
         ]
 
-    # ---------- (7) MULTICORNER CONSERVATION ----------
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {"IREF_Mvbp": b.IREF_Mvbp}
 
@@ -196,7 +192,7 @@ class Circuit(CircuitModel):
         e = frozen["extra"]
         return [rres(b.IREF_Mvbp, e["IREF_Mvbp"], e["IREF_Mvbp"])]
 
-    # ---------- (6) SPECS ----------
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         ss = build_ss_model(
             self.MOSFETS,
@@ -214,8 +210,6 @@ class Circuit(CircuitModel):
             "PM": ac.phase_margin(),
             "DC CMR (dB)": 20.0 * np.log10(max(ac.rejection(ac_cm), 1e-300)),
         }
-        # Self-bias at the requested vout_dc: the second-stage input requirement
-        # must match the first-stage output. This is the real output-centering error.
         out["VOUT_Error"] = abs(b.M4.vgs - b.M2a.vgs)
         Area = (
             b.L["M1a"] * b.W["M1a"]
@@ -247,7 +241,7 @@ class Circuit(CircuitModel):
         out["Output_Swing"] = Output_Swing
         return out
 
-    # ---------- netlist hooks ----------
+    # ---------- (8) NETLIST HOOKS ----------
     def mirror_currents(self, ref_op) -> dict:
         return {"VBP": ref_op.IREF_Mvbp}
 

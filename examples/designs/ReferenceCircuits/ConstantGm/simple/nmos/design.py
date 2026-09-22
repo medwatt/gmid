@@ -20,7 +20,7 @@ class Circuit(CircuitModel):
     PORTS = ["VBN", "VBP2", "vdd", "vss"]
     GROUND = "vss"
 
-    # ============================================================= (1) TOPOLOGY
+    # ---------- (1) TOPOLOGY ----------
     MOSFETS = [
         Instance("M1", "nmos", d="VBP2", g="VBN", s="nR", b="vss"),
         Instance("M2", "nmos", d="VBN", g="VBN", s="vss", b="vss"),
@@ -31,7 +31,7 @@ class Circuit(CircuitModel):
     VSOURCES = [VSource("VDD", p="vdd", n="vss", supply=True)]
     SIGNAL_NODES = set()
 
-    # ============================================================= (2) KNOBS
+    # ---------- (2) KNOBS ----------
     KNOBS = [
         Knob("M2_GMID", role="op", sets_width_of="M2"),  # NMOS gm/ID (sets W2)
         Knob("M3_GMID", role="op", sets_width_of="M3"),  # PMOS gm/ID (sets W3)
@@ -40,11 +40,9 @@ class Circuit(CircuitModel):
         Knob("K", role="geom"),    # M1 is K x wider than M2
         Knob("IREF", role="external"),  # self-biased current I_A (left branch)
     ]
-    # The conserved quantity across corners is the physical resistor R (a DERIVED value),
-    # NOT a current source -- so IREF re-solves per corner.
     RECORNER_RESOLVE = ["IREF"]
 
-    # ============================================================= (3) UNKNOWNS
+    # ---------- (3) UNKNOWNS ----------
     UNKNOWNS = [
         Unknown("VBN", seed=lambda c: 0.45 * c["vdd"], bound=lambda c: (0.05, c["vdd"])),
         Unknown("VBP2", seed=lambda c: 0.60 * c["vdd"], bound=lambda c: (0.05, c["vdd"])),
@@ -54,18 +52,17 @@ class Circuit(CircuitModel):
         Unknown("I_B", seed=lambda c: 20e-6, bound=(1e-6, 1e-3)),
     ]
 
-    # ============================================================= (4) SOLVE_POINT
+    # ---------- (4) SOLVE_POINT ----------
     def solve_point(self, v: State, dev, cond) -> State:
         VDD = cond["vdd"]
         K = v.K
-        I_A = v.IREF # branch A: M3 (diode) -> M1 (K x, degenerated) -> R -> vss
+        I_A = v.IREF
         I_B = v.I_B  # branch B: M4 (mirror) -> M2 (diode) -> vss
         M2 = dev.nmos(gmid=v.M2_GMID, L=v.L_n, vds=v.VBN, vsb=0.0)            # diode  (carries I_B)
         M3 = dev.pmos(gmid=v.M3_GMID, L=v.L_p, vds=VDD - v.VBP2, vsb=0.0)     # diode  (carries I_A)
         M1 = dev.nmos(gmid=v.M1_GMID, L=v.L_n, vds=v.VBP2 - v.VnR, vsb=v.VnR) # body effect (I_A)
         M4 = dev.pmos(gmid=v.M4_GMID, L=v.L_p, vds=VDD - v.VBN, vsb=0.0)      # mirror of M3 (I_B)
 
-        # widths from the reference devices of each branch (diode currents set the widths):
         W = {"M2": I_B / M2.jd, "M3": I_A / M3.jd}
         W["M1"] = K * W["M2"]  # geometry: K x wider than M2
         W["M4"] = W["M3"]  # geometry: 1:1 PMOS mirror
@@ -89,7 +86,7 @@ class Circuit(CircuitModel):
             VDD=VDD,
         )
 
-    # ============================================================= (5) RESIDUALS
+    # ---------- (5) RESIDUALS ----------
     def residuals(self, b) -> list:
         return [
             vres(b.VBN, b.M2.vgs),                       # M2 diode: VBN = VGS2
@@ -99,22 +96,19 @@ class Circuit(CircuitModel):
             vres(b.VDD - b.VBP2, b.M4.vgs),              # M4 VSG = M3 VSG (gates tied at VBP2)
             rres(
                 b.I_B, b.W["M4"] * b.M4.jd, b.I_B
-            ),  # PMOS copy: M4 (W4=W3) delivers I_B #   at its own VDS -> finite-lambda
+            ),
         ]
 
-    # ====================================================== (7) MULTICORNER CONSERVATION
-    # The physical resistor R is what is held across corners (a derived value). IREF re-solves
-    # so that VnR = IREF * R still holds on each corner's LUT -- the self-bias loop closes.
+    # ---------- (6) MULTICORNER CONSERVATION ----------
     def freeze_extra(self, b) -> dict:
         return {"R": b.R}
 
     def recorner_residuals(self, b, frozen) -> list:
         return [rres(b.VnR, b.IA * frozen["extra"]["R"], b.VnR)]
 
-    # ============================================================= (6) SPECS
+    # ---------- (7) SPECS ----------
     def specs(self, b, cond) -> dict:
         gm2 = b.GMID["M2"] * b.I_B  # M2 carries the branch-B current
-        # keep every device saturated (M2/M3 are diodes; M1/M4 are the ones that can go triode):
         crit = [b.M1, b.M2, b.M3, b.M4]
         vds_margin = min(pt.vds_used - pt.vdsat for pt in crit)
         return {
@@ -133,7 +127,7 @@ class Circuit(CircuitModel):
             "PMOS_GMID": b.GMID["M3"],
         }
 
-    # ---- netlist hook: R = VnR / IREF (both are solved/knob values on the reference op) ----
+    # ---------- (8) NETLIST HOOKS ----------
     def passive_values(self, ref_op) -> dict:
         return {"R": ref_op.VnR / ref_op.IA}
 
