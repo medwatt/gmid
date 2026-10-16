@@ -20,6 +20,20 @@ N_VGS = len(synthetic.VGS_AXIS)
 N_VDS = len(synthetic.VDS_AXIS)
 
 
+def _decreasing_vgs_table():
+    """Minimal table whose VGS axis decreases (as stored for a PMOS device)."""
+    length = np.array([1e-6, 2e-6])
+    vbs = np.array([0.0])
+    vgs = np.array([1.2, 1.0, 0.8, 0.6, 0.4, 0.2, 0.0])
+    vds = np.array([0.6])
+    shape = (len(length), len(vbs), len(vgs), len(vds))
+    return {
+        "length": length, "vbs": vbs, "vgs": vgs, "vds": vds,
+        "parameter_names": ["id"],
+        "id": np.arange(float(np.prod(shape))).reshape(shape),
+    }
+
+
 class TestTileArrays:
     def test_axis_matches_rows(self):
         a = np.arange(3.0)
@@ -89,3 +103,16 @@ class TestExtract2dTable:
         _, _, table = extract_2d_table(lookup_table=dev, vbs=0.0, vds=0.6)
         assert table["vgs"].shape == table["id"].shape
         assert table["length"].shape == table["id"].shape
+
+    def test_range_with_step_on_decreasing_axis(self):
+        # Regression: on a decreasing axis a stepped range used to append the
+        # *start* index at the end, duplicating the first sample and making the
+        # plotted curve close back onto itself.
+        dev = _decreasing_vgs_table()
+        _, filt, _ = extract_2d_table(
+            lookup_table=dev, vbs=0.0, vds=0.6, vgs=(1.2, 0.2, 0.2), primary="vgs"
+        )
+        sel = np.asarray(filt["vgs"])
+        assert sel[0] != pytest.approx(sel[-1])
+        assert np.all(np.diff(sel) < 0)
+        assert sel[-1] == pytest.approx(0.2)

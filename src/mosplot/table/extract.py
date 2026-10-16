@@ -70,6 +70,10 @@ def extract_2d_table(
 
             start_idx = int(np.abs(data - start_val).argmin())
             stop_idx = int(np.abs(data - stop_val).argmin())
+            # Index of the requested "stop" endpoint in the table. Must be
+            # remembered separately: for a decreasing axis the start/stop
+            # indices below get swapped, so inds[-1] no longer points at it.
+            stop_end_idx = stop_idx
 
             if ascending and start_idx > stop_idx:
                 start_idx, stop_idx = stop_idx, start_idx
@@ -92,8 +96,12 @@ def extract_2d_table(
                     raise ValueError("Step value is too small compared to data spacing.")
                 step_idx = index_step if ascending else -index_step
                 sliced_inds = inds[::step_idx]
-                if sliced_inds[-1] != inds[-1]:
-                    sliced_inds = np.concatenate((sliced_inds, [inds[-1]]))
+                # Append the true stop endpoint. Using inds[-1] here appended
+                # the *start* endpoint on decreasing axes, duplicating the
+                # first sample at the very end and making the plotted line
+                # jump back and close the curve.
+                if sliced_inds[-1] != stop_end_idx:
+                    sliced_inds = np.concatenate((sliced_inds, [stop_end_idx]))
                 inds = sliced_inds
 
             return inds, data[inds], False
